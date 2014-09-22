@@ -1,13 +1,14 @@
-include ~/apron-0.9.9/Makefile.config
+LLVM_PATH=$(HOME)/llvm
+APRON_PATH=$(HOME)/apron-0.9.9
 
-LLVM_PATH=/home/$(USER)/llvm
+include $(APRON_PATH)/Makefile.config
 
 ICFLAGS = \
 -I$(GMP_PREFIX)/include \
 -I$(MPFR_PREFIX)/include \
 -I$(APRON_PREFIX)/include \
 -Wall -Wstrict-prototypes -Wimplicit-function-declaration \
-    --std=c++0x -Wno-unused-parameter -Wno-undef
+    --std=c++0x -Wno-unused-parameter -Wno-undef -Wno-cast-align
 
 # -std=c99
 # -Winline -Wconversion
