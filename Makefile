@@ -78,7 +78,7 @@ worklist: worklist.o
     
 
 worklist.o: worklist.cpp
-	$(CXX) $(CXXFLAGS_DEBUG) $(WORKLISTIFLAGS) -c -o $@ $< `$(LLVM_PATH)/build/Debug+Asserts/bin/llvm-config --cxxflags --ldflags --libs all --system-libs`
+	$(CXX) $(CXXFLAGS_DEBUG) $(WORKLISTIFLAGS) -c -o $@ $< `$(LLVM_PATH)/build/Debug+Asserts/bin/llvm-config --cxxflags`
 
 # OCaml examples
 

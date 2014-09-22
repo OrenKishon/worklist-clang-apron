@@ -19,11 +19,7 @@
 #include "pk.h"
 #include "pkeq.h"
 
-using namespace std;
 using namespace clang;
-using namespace clang::driver;
-using namespace clang::tooling;
-using namespace llvm;
 
 static int printCFG;
 static const char *funcToAnalyze;
@@ -236,7 +232,7 @@ public:
     { }
 
     virtual bool VisitFunctionDecl(FunctionDecl *func) {
-        string funcName = func->getNameInfo().getName().getAsString();
+        std::string funcName = func->getNameInfo().getName().getAsString();
         llvm::outs() << funcName << "\n";        
         return true;
     }
