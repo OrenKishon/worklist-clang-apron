@@ -11,9 +11,9 @@
 #include "clang/Analysis/AnalysisContext.h"
 #include "clang/Analysis/Analyses/DataflowWorklist.h"
 
+// Apron includes
 #include "ap_global0.h"
 #include "ap_global1.h"
-
 #include "box.h"
 #include "oct.h"
 #include "pk.h"
@@ -26,12 +26,79 @@ static const char *funcToAnalyze;
 static ap_manager_t* man;
 static ap_environment_t *env;
 
+class Variables {
+    // Maps a variable to an apron 'dimention' (index)
+    llvm::DenseMap<const VarDecl *, unsigned> var2Dim;
+    DeclContext *dc;
+    ap_var_t *name_of_dim;
+    int size;
+    
+public:
+    Variables() {
+        name_of_dim = NULL;
+        size = 0;
+    }
+
+    void init(Decl *D) {
+        dc = cast<DeclContext>(D);
+        
+        for (DeclContext::specific_decl_iterator<VarDecl> I(dc->decls_begin()),
+                E(dc->decls_end()); I != E; ++I) {
+            const VarDecl *vd = *I;
+
+            if (isTrackedVar(vd))
+                ++size;
+        }
+
+        name_of_dim = (ap_var_t *)malloc(size * sizeof(ap_var_t));
+
+        int ind = 0;
+        for (DeclContext::specific_decl_iterator<VarDecl> I(dc->decls_begin()),
+                E(dc->decls_end()); I != E; ++I) {
+            const VarDecl *vd = *I;
+
+            if (!isTrackedVar(vd)) {
+                continue;
+            }
+
+            name_of_dim[ind] = (ap_var_t)vd->getNameAsString().c_str();
+            var2Dim[vd] = ind;
+            ++ind;
+        }
+
+        // Assuming integers only;
+        env = ap_environment_alloc(name_of_dim, size, NULL, 0);
+    }
+
+    ~Variables() {
+        if (env)
+            ap_environment_free(env);
+        if (name_of_dim) {
+            free(name_of_dim);
+        }
+    }
+
+    bool isTrackedVar(const VarDecl *vd) {
+        if (vd->isLocalVarDecl() && !vd->hasGlobalStorage() &&
+                !vd->isExceptionVariable() && !vd->isInitCapture() &&
+                vd->getDeclContext() == dc) {
+            QualType ty = vd->getType();
+            
+            return ty->isScalarType() || ty->isVectorType();
+        }
+
+        return false;
+    }
+};
+
+static Variables variables;
+
+// This context exists for every block
 class BlockAnalysisContext {
     const CFGBlock *block;
     int nIterations;
     // If null then not a control branch. 
     const Stmt *cond;
-    int x;
 
 public:
     BlockAnalysisContext(const CFGBlock *block) {
@@ -50,7 +117,6 @@ public:
 //            }
             this->cond = cond;
         }
-        x = 0;
     }
 
     // Called by worklist algorithm (chaotic iteration)
@@ -62,10 +128,10 @@ public:
 };
 
 class BlockAnalysis {
+    // A container for BlockAnalysisContext objects
     llvm::DenseMap<const CFGBlock *, BlockAnalysisContext *> block2Ctx;
-public:
-    BlockAnalysis() {}
 
+public:
     void add(const CFGBlock *block) {
         block2Ctx[block] = new BlockAnalysisContext(block);
     }
@@ -189,7 +255,8 @@ static bool runOnBlock(const CFGBlock *block) {
 }
 
 static void analyze(Decl *D) {
-    // Construct the analysis context with the specified CFG build options.
+    variables.init(D);
+
     AnalysisDeclContext ac(/* AnalysisDeclContextManager */ nullptr, D);
     CFG *cfg;
     if (!(cfg = ac.getCFG()))
@@ -305,10 +372,6 @@ int main(int argc, const char **argv) {
     printf("Apron: Library %s, version %s\n", man->library, man->version);
     printf("******************************\n");
 
-    /* One integer vars, none real */
-    ap_var_t name_of_dim[] = { (ap_var_t)"x" };
-    env = ap_environment_alloc(&name_of_dim[0], 1, NULL,0);    
-    
     int ret = !clang::tooling::runToolOnCode(new ExampleFrontendAction,
             contents.c_str());
 
