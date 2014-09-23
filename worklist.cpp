@@ -100,6 +100,8 @@ class BlockAnalysisContext {
     // If null then not a control branch. 
     const Stmt *cond;
 
+    ap_abstract1_t *abs;
+
 public:
     BlockAnalysisContext(const CFGBlock *block) {
         cond = NULL;
@@ -117,6 +119,9 @@ public:
 //            }
             this->cond = cond;
         }
+
+        // Chaotic iteration: All abstract values initialized as bottom
+        abs = ap_abstract1_bottom(man, env);
     }
 
     // Called by worklist algorithm (chaotic iteration)
@@ -179,8 +184,6 @@ void BlockAnalysisContext::processPredValues() {
             predCtx->cond->dump();
 //            // Do something with cond
         }
-
-        x = x >= predCtx->x ? x : predCtx->x;
     }
 }
 
