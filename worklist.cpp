@@ -227,13 +227,12 @@ void BlockAnalysisContext::processPredValues() {
     for (CFGBlock::const_pred_iterator I = block->pred_begin(),
             E = block->pred_end(); I != E; ++I) {
         const CFGBlock *Pred = *I;
-        if (!Pred || Pred->getBlockID()==7)
+        if (!Pred)
             continue;
 
         printf("\tRunning on pred %d\n", Pred->getBlockID());
         BlockAnalysisContext *predCtx = blockAnalysis.get(Pred);
-        if (predCtx->cond &&
-                predCtx->cond->getStmtClassName()) {
+        if (predCtx->cond && predCtx->cond->getStmtClassName()) {
 //        if (Pred->getTerminatorCondition()) {
 //                printf("%d %s\n", Pred->getBlockID(),
 //                        Pred->getTerminatorCondition()->getStmtClassName());

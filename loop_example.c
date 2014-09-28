@@ -22,7 +22,7 @@ static void loop_example(void)
 
     /* Concrete: B[2] = intersect(B[5], {s | s(x) >= 1000}) */
     /* Abstract: B[2] = meet(B[5], [1000, inf]) */
-    if (!(x == 1000))
+    if (x != 1000)
     {
         /* Concrete: B[1] = intersect(B[2], x != 1000) */
         /* Concrete: B[1] = intersect(B[2],x<=999) U intersect(B[2],x>=1001) */
