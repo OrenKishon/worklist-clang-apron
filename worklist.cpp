@@ -93,6 +93,43 @@ public:
 
 static Variables variables;
 
+class TransferFunctions : public StmtVisitor<TransferFunctions> {
+//  CFGBlockValues &vals;
+//  const CFG &cfg;
+    const CFGBlock *block;
+//  AnalysisDeclContext &ac;
+//  const ClassifyRefs &classification;
+//  ObjCNoReturn objCNoRet;
+//  UninitVariablesHandler &handler;
+//
+public:
+  TransferFunctions(const CFGBlock *block) {
+      this->block = block;
+  }
+
+//  void VisitBlockExpr(BlockExpr *be);
+//  void VisitCallExpr(CallExpr *ce);
+//  void VisitDeclRefExpr(DeclRefExpr *dr);
+//  void VisitObjCForCollectionStmt(ObjCForCollectionStmt *FS);
+//  void VisitObjCMessageExpr(ObjCMessageExpr *ME);
+    void VisitBinaryOperator(BinaryOperator *BO) {
+        if (BO->getOpcode() == BO_Assign) {
+            printf("Assignment\n");
+            BO->getLHS()->dump();
+        }
+    }
+    
+    void VisitDeclStmt(DeclStmt *DS) {
+        printf("DeclStmt:\n");
+        DS->getSingleDecl()->dump();
+    
+        for (auto *DI : DS->decls()) {
+            VarDecl *VD = dyn_cast<VarDecl>(DI);
+            VD->dump();
+        }
+    }
+};
+
 // This context exists for every block
 class BlockAnalysisContext {
     const CFGBlock *block;
@@ -100,7 +137,10 @@ class BlockAnalysisContext {
     // If null then not a control branch. 
     const Stmt *cond;
 
-    ap_abstract1_t *abs;
+    // If a control branch, need two exit values for the two branches
+    ap_abstract1_t absEntry;
+    ap_abstract1_t absExit1;
+    ap_abstract1_t absExit2;
 
 public:
     BlockAnalysisContext(const CFGBlock *block) {
@@ -121,7 +161,9 @@ public:
         }
 
         // Chaotic iteration: All abstract values initialized as bottom
-        abs = ap_abstract1_bottom(man, env);
+        absEntry = ap_abstract1_bottom(man, env);
+        absExit1 = ap_abstract1_bottom(man, env);
+        absExit2 = ap_abstract1_bottom(man, env);
     }
 
     // Called by worklist algorithm (chaotic iteration)
@@ -160,6 +202,21 @@ public:
     void processPredValues(const CFGBlock *block) {
         block2Ctx[block]->processPredValues();
     }
+
+    bool runOnBlock(const CFGBlock *block) {
+        block2Ctx[block]->processPredValues();
+    
+        // Apply the transfer function.
+    //    TransferFunctions tf(vals, cfg, block, ac, classification, handler);
+        TransferFunctions tf(block);
+        for (CFGBlock::const_iterator I = block->begin(), E = block->end();
+                I != E; ++I) {
+            if (Optional<CFGStmt> cs = I->getAs<CFGStmt>())
+                tf.Visit(const_cast<Stmt*>(cs->getStmt()));
+        }
+    
+        return false;
+    }
 };
 
 static BlockAnalysis blockAnalysis;
@@ -187,46 +244,6 @@ void BlockAnalysisContext::processPredValues() {
     }
 }
 
-class TransferFunctions : public StmtVisitor<TransferFunctions> {
-//  CFGBlockValues &vals;
-//  const CFG &cfg;
-    const CFGBlock *block;
-//  AnalysisDeclContext &ac;
-//  const ClassifyRefs &classification;
-//  ObjCNoReturn objCNoRet;
-//  UninitVariablesHandler &handler;
-//
-public:
-  TransferFunctions(const CFGBlock *block) {
-      this->block = block;
-  }
-
-  void VisitBinaryOperator(BinaryOperator *bo);
-//  void VisitBlockExpr(BlockExpr *be);
-//  void VisitCallExpr(CallExpr *ce);
-//  void VisitDeclRefExpr(DeclRefExpr *dr);
-  void VisitDeclStmt(DeclStmt *ds);
-//  void VisitObjCForCollectionStmt(ObjCForCollectionStmt *FS);
-//  void VisitObjCMessageExpr(ObjCMessageExpr *ME);
-};
-
-void TransferFunctions::VisitBinaryOperator(BinaryOperator *BO) {
-  if (BO->getOpcode() == BO_Assign) {
-      printf("Assignment\n");
-      BO->getLHS()->dump();
-  }
-}
-
-void TransferFunctions::VisitDeclStmt(DeclStmt *DS) {
-    printf("DeclStmt:\n");
-    DS->getSingleDecl()->dump();
-
-  for (auto *DI : DS->decls()) {
-    VarDecl *VD = dyn_cast<VarDecl>(DI);
-    VD->dump();
-  }
-}
-
 static void VisualizeCfg(AnalysisDeclContext *ac, CFG *cfg) {
     switch (printCFG) {
     case 1:
@@ -240,21 +257,6 @@ static void VisualizeCfg(AnalysisDeclContext *ac, CFG *cfg) {
         }
         break;
     }
-}
-
-static bool runOnBlock(const CFGBlock *block) {
-    blockAnalysis.processPredValues(block);
-
-    // Apply the transfer function.
-//    TransferFunctions tf(vals, cfg, block, ac, classification, handler);
-    TransferFunctions tf(block);
-    for (CFGBlock::const_iterator I = block->begin(), E = block->end(); I != E;
-            ++I) {
-        if (Optional<CFGStmt> cs = I->getAs<CFGStmt>())
-            tf.Visit(const_cast<Stmt*>(cs->getStmt()));
-    }
-
-    return false;
 }
 
 static void analyze(Decl *D) {
@@ -284,7 +286,7 @@ static void analyze(Decl *D) {
         printf("Block ID: %u\n", block->getBlockID());
 
         // Did the block change?
-        bool changed = runOnBlock(block);
+        bool changed = blockAnalysis.runOnBlock(block);
         
         if (changed || !previouslyVisited[block->getBlockID()])
             worklist.enqueueSuccessors(block);
