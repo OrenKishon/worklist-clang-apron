@@ -93,45 +93,9 @@ public:
 
 static Variables variables;
 
-class TransferFunctions : public StmtVisitor<TransferFunctions> {
-//  CFGBlockValues &vals;
-//  const CFG &cfg;
-    const CFGBlock *block;
-//  AnalysisDeclContext &ac;
-//  const ClassifyRefs &classification;
-//  ObjCNoReturn objCNoRet;
-//  UninitVariablesHandler &handler;
-//
-public:
-  TransferFunctions(const CFGBlock *block) {
-      this->block = block;
-  }
-
-//  void VisitBlockExpr(BlockExpr *be);
-//  void VisitCallExpr(CallExpr *ce);
-//  void VisitDeclRefExpr(DeclRefExpr *dr);
-//  void VisitObjCForCollectionStmt(ObjCForCollectionStmt *FS);
-//  void VisitObjCMessageExpr(ObjCMessageExpr *ME);
-    void VisitBinaryOperator(BinaryOperator *BO) {
-        if (BO->getOpcode() == BO_Assign) {
-            printf("Assignment\n");
-            BO->getLHS()->dump();
-        }
-    }
-    
-    void VisitDeclStmt(DeclStmt *DS) {
-        printf("DeclStmt:\n");
-        DS->getSingleDecl()->dump();
-    
-        for (auto *DI : DS->decls()) {
-            VarDecl *VD = dyn_cast<VarDecl>(DI);
-            VD->dump();
-        }
-    }
-};
-
 // This context exists for every block
 class BlockAnalysisContext {
+    BlockAnalysis *blockAnalysis;
     const CFGBlock *block;
     int nIterations;
     // If null then not a control branch. 
@@ -143,15 +107,16 @@ class BlockAnalysisContext {
     ap_abstract1_t absExit2;
 
 public:
-    BlockAnalysisContext(const CFGBlock *block) {
-        cond = NULL;
+    BlockAnalysisContext(BlockAnalysis *blockAnalysis, const CFGBlock *block) {
+        this->blockAnalysis = blockAnalysis;
         this->block = block;
         nIterations = 0;
+        cond = NULL;
 
-        printf("%d\n", block->getBlockID());
+//        printf("%d\n", block->getBlockID());
         if (const Stmt *cond = block->getTerminatorCondition()) {
-                printf("%s\n",
-                        block->getTerminatorCondition()->getStmtClassName());
+//                printf("%s\n",
+//                        block->getTerminatorCondition()->getStmtClassName());
 //            if (block->pred_size() > 1) {
 //               printf("Analysis error: block %d has multiple predecessors but "
 //                       "is also a control branch\n", block->getBlockID());
@@ -167,20 +132,59 @@ public:
     }
 
     // Called by worklist algorithm (chaotic iteration)
-    void processPredValues();
+    void processSuccValues();
 
-    int nIterateions() {
-        return nIterations;
+    void printAbs() {
+        printf("Abs value: ");
+        ap_abstract1_fprint(stdout, man, &absEntry);
+    }
+};
+
+class TransferFunctions : public StmtVisitor<TransferFunctions> {
+    BlockAnalysisContext *analysisCtx;
+
+public:
+  TransferFunctions(BlockAnalysisContext *analysisCtx) {
+      this->analysisCtx = analysisCtx;
+      analysisCtx->printAbs();
+  }
+
+//  void VisitBlockExpr(BlockExpr *be);
+//  void VisitCallExpr(CallExpr *ce);
+//  void VisitDeclRefExpr(DeclRefExpr *dr);
+//  void VisitObjCForCollectionStmt(ObjCForCollectionStmt *FS);
+//  void VisitObjCMessageExpr(ObjCMessageExpr *ME);
+    void VisitBinaryOperator(BinaryOperator *BO) {
+        if (BO->getOpcode() == BO_Assign) {
+            printf("Assignment\n");
+            BO->getLHS()->dump();
+            BO->getRHS()->dump();
+        }
+    }
+    
+    void VisitDeclStmt(DeclStmt *DS) {
+        printf("DeclStmt:\n");
+        DS->getSingleDecl()->dump();
+    
+        for (auto *DI : DS->decls()) {
+            VarDecl *VD = dyn_cast<VarDecl>(DI);
+            VD->dump();
+        }
     }
 };
 
 class BlockAnalysis {
     // A container for BlockAnalysisContext objects
     llvm::DenseMap<const CFGBlock *, BlockAnalysisContext *> block2Ctx;
+    CFG *cfg;
 
 public:
-    void add(const CFGBlock *block) {
-        block2Ctx[block] = new BlockAnalysisContext(block);
+    BlockAnalysis(CFG *cfg) {
+        this->cfg = cfg;
+    }
+
+    void add(const CFGBlock *block, bool isEntry) {
+        block2Ctx[block] = new BlockAnalysisContext(this, block);
     }
 
     ~BlockAnalysis() {
@@ -199,30 +203,30 @@ public:
         return block2Ctx[block];
     }
 
-    void processPredValues(const CFGBlock *block) {
-        block2Ctx[block]->processPredValues();
-    }
-
     bool runOnBlock(const CFGBlock *block) {
-        block2Ctx[block]->processPredValues();
-    
+        printf("Run on block B[%d]\n", block->getBlockID());
+
         // Apply the transfer function.
     //    TransferFunctions tf(vals, cfg, block, ac, classification, handler);
-        TransferFunctions tf(block);
+        TransferFunctions tf(block2Ctx[block]);
+    
         for (CFGBlock::const_iterator I = block->begin(), E = block->end();
                 I != E; ++I) {
             if (Optional<CFGStmt> cs = I->getAs<CFGStmt>())
                 tf.Visit(const_cast<Stmt*>(cs->getStmt()));
         }
     
+        block2Ctx[block]->processSuccValues();
+    
         return false;
     }
 };
 
-static BlockAnalysis blockAnalysis;
-
-void BlockAnalysisContext::processPredValues() {
+void BlockAnalysisContext::processSuccValues() {
     ++nIterations;
+
+    ap_abstract1_t absPrev = absEntry;
+    absEntry = ap_abstract1_bottom(man, env);
 
     for (CFGBlock::const_pred_iterator I = block->pred_begin(),
             E = block->pred_end(); I != E; ++I) {
@@ -230,8 +234,8 @@ void BlockAnalysisContext::processPredValues() {
         if (!Pred)
             continue;
 
-        printf("\tRunning on pred %d\n", Pred->getBlockID());
-        BlockAnalysisContext *predCtx = blockAnalysis.get(Pred);
+//        printf("\tRunning on pred %d\n", Pred->getBlockID());
+        BlockAnalysisContext *predCtx = blockAnalysis->get(Pred);
         if (predCtx->cond && predCtx->cond->getStmtClassName()) {
 //        if (Pred->getTerminatorCondition()) {
 //                printf("%d %s\n", Pred->getBlockID(),
@@ -273,6 +277,8 @@ static void analyze(Decl *D) {
 
     llvm::BitVector previouslyVisited(cfg->getNumBlockIDs());
 
+    BlockAnalysis blockAnalysis(cfg);
+
     for (CFG::const_iterator BI = cfg->begin(), BE = cfg->end(); BI != BE;
             ++BI) {
         const CFGBlock *block = *BI;
@@ -280,6 +286,8 @@ static void analyze(Decl *D) {
         blockAnalysis.add(block);
     }
     
+
+    blockAnalysis.runOnBlock(&cfg->getEntry());
 
     while (const CFGBlock *block = worklist.dequeue()) {
         printf("Block ID: %u\n", block->getBlockID());

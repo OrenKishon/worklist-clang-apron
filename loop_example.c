@@ -30,7 +30,7 @@ static void loop_example(void)
         printf("Unable to prove x == 1000!\n");
     }
 
-    /* B[0] */
+    /* B[0] = B[1] U B[1] */
 }
 
 int main(void)
