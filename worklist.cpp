@@ -2,6 +2,7 @@
 #include <fstream>      // std::ifstream
 #include <unistd.h>     // fork()
 #include <stdlib.h>     // atoi()
+#include <unordered_map> 
 
 #include "clang/AST/Decl.h"
 #include "clang/AST/StmtVisitor.h"
@@ -28,7 +29,7 @@ static ap_environment_t *env;
 
 class Variables {
     // Maps a variable to an apron 'dimention' (index)
-    llvm::DenseMap<const VarDecl *, unsigned> var2Dim;
+    std::unordered_map<const VarDecl *, unsigned> var2Dim;
     DeclContext *dc;
     ap_var_t *name_of_dim;
     int size;
@@ -95,44 +96,92 @@ static Variables variables;
 
 // This context exists for every block
 class BlockAnalysisContext {
-    BlockAnalysis *blockAnalysis;
     const CFGBlock *block;
-    int nIterations;
-    // If null then not a control branch. 
-    const Stmt *cond;
+//    // If null then not a control branch. 
+//    const Stmt *cond;
 
-    // If a control branch, need two exit values for the two branches
-    ap_abstract1_t absEntry;
-    ap_abstract1_t absExit1;
-    ap_abstract1_t absExit2;
+    // Abstract values
+    std::unordered_map<const CFGBlock *, ap_abstract1_t> pred2abs;
+    ap_abstract1_t abs;
 
+    // Successors
+    const CFGBlock *succ[2];
 public:
-    BlockAnalysisContext(BlockAnalysis *blockAnalysis, const CFGBlock *block) {
-        this->blockAnalysis = blockAnalysis;
+    BlockAnalysisContext(const CFGBlock *block) {
         this->block = block;
-        nIterations = 0;
-        cond = NULL;
-
-//        printf("%d\n", block->getBlockID());
-        if (const Stmt *cond = block->getTerminatorCondition()) {
-//                printf("%s\n",
-//                        block->getTerminatorCondition()->getStmtClassName());
-//            if (block->pred_size() > 1) {
-//               printf("Analysis error: block %d has multiple predecessors but "
-//                       "is also a control branch\n", block->getBlockID());
-//               exit(1);
-//            }
-            this->cond = cond;
-        }
 
         // Chaotic iteration: All abstract values initialized as bottom
-        absEntry = ap_abstract1_bottom(man, env);
-        absExit1 = ap_abstract1_bottom(man, env);
-        absExit2 = ap_abstract1_bottom(man, env);
+        for (CFGBlock::const_pred_iterator I = block->pred_begin(), E = block->pred_end(); I != E; ++I) {
+            const CFGBlock *Pred = *I;
+            if (!Pred)
+                continue;
+
+            pred2abs[Pred] = ap_abstract1_bottom(man, env);
+        }
+
+        assert(block->succ_size() <= 2);
+        // If has terminator statement => has two successors
+        assert(!block->getTerminator() || block->succ_size() == 2);
+
+        succ[0] = NULL;
+        succ[1] = NULL;
+        if (block->succ_empty())
+            return;
+
+        for (CFGBlock::const_succ_iterator I = block->succ_begin(), E = block->succ_end(); I != E; ++I) {
+            const CFGBlock *s = *I;
+            if (!s)
+                continue;
+
+            if (!succ[0])
+                succ[0] = s;
+            else
+                succ[1] = s;
+        }
     }
 
-    // Called by worklist algorithm (chaotic iteration)
-    void processSuccValues();
+    void updateEntryValue() {
+        // Entry block
+        if (block->pred_empty()) {
+            abs = ap_abstract1_top(man, env);
+            return;
+        }
+
+        // Merge (join) all predeseccors exit values
+        
+        printf("%d) Merging preds' values. old value:", block->getBlockID());
+        ap_abstract1_fprint(stdout, man, &abs);
+        abs = ap_abstract1_bottom(man, env);
+        for (auto it = pred2abs.begin(); it != pred2abs.end(); ++it) {
+            ap_abstract1_t absPred = it->second;
+            abs = ap_abstract1_join(man, false, &abs, &absPred);
+        }
+        printf("After merge:");
+        ap_abstract1_fprint(stdout, man, &abs);
+    }
+
+    // Each successor holds a list of its predecessors exit values. We update the entry for this block in each
+    // of its successors' list
+    void updateSuccValues() {
+        if (block->succ_empty())
+            return;
+
+        // Single successor: just pass this block's exit value as the successor's entry value
+        if (!block->getTerminator()) {
+            succ[0]->pred2abs[this->block] = abs;
+            return;
+        }
+
+        // Two successors: first for 'then', second for 'else'
+        Stmt *cond = getTerminatorCondition();
+        printf("\tcondition: %s\n", predCtx->cond->getStmtClassName());
+        cond.dump();
+
+        // Do something with cond
+        succ[0]->pred2abs[this->block] = abs;
+        succ[1]->pred2abs[this->block] = abs;
+    }
+
 
     void printAbs() {
         printf("Abs value: ");
@@ -146,7 +195,10 @@ class TransferFunctions : public StmtVisitor<TransferFunctions> {
 public:
   TransferFunctions(BlockAnalysisContext *analysisCtx) {
       this->analysisCtx = analysisCtx;
+      println("\tAbs value before merge:");
       analysisCtx->printAbs();
+      println("\tAbs value after merge:");
+
   }
 
 //  void VisitBlockExpr(BlockExpr *be);
@@ -175,29 +227,24 @@ public:
 
 class BlockAnalysis {
     // A container for BlockAnalysisContext objects
-    llvm::DenseMap<const CFGBlock *, BlockAnalysisContext *> block2Ctx;
-    CFG *cfg;
+    std::unordered_map<const CFGBlock *, BlockAnalysisContext> block2Ctx;
 
 public:
-    BlockAnalysis(CFG *cfg) {
-        this->cfg = cfg;
+    void add(const CFGBlock *block) {
+        block2Ctx[block] = BlockAnalysisContext(block);
     }
 
-    void add(const CFGBlock *block, bool isEntry) {
-        block2Ctx[block] = new BlockAnalysisContext(this, block);
-    }
-
-    ~BlockAnalysis() {
-        for (llvm::DenseMap<const CFGBlock *, BlockAnalysisContext *>::
-                iterator I = block2Ctx.begin(), E = block2Ctx.end();
-                I != E; ++I) {
-            BlockAnalysisContext *ctx = (*I).second;
-            if (!ctx)
-                continue;
-
-            delete ctx;
-        }
-    }
+//    ~BlockAnalysis() {
+//        for (llvm::DenseMap<const CFGBlock *, BlockAnalysisContext *>::
+//                iterator I = block2Ctx.begin(), E = block2Ctx.end();
+//                I != E; ++I) {
+//            BlockAnalysisContext *ctx = (*I).second;
+//            if (!ctx)
+//                continue;
+//
+//            delete ctx;
+//        }
+//    }
 
     BlockAnalysisContext *get(const CFGBlock *block) {
         return block2Ctx[block];
@@ -205,6 +252,8 @@ public:
 
     bool runOnBlock(const CFGBlock *block) {
         printf("Run on block B[%d]\n", block->getBlockID());
+
+        block2Ctx[block]->updateEntryValue();
 
         // Apply the transfer function.
     //    TransferFunctions tf(vals, cfg, block, ac, classification, handler);
@@ -216,36 +265,11 @@ public:
                 tf.Visit(const_cast<Stmt*>(cs->getStmt()));
         }
     
-        block2Ctx[block]->processSuccValues();
+        block2Ctx[block]->updateSuccValues();
     
         return false;
     }
 };
-
-void BlockAnalysisContext::processSuccValues() {
-    ++nIterations;
-
-    ap_abstract1_t absPrev = absEntry;
-    absEntry = ap_abstract1_bottom(man, env);
-
-    for (CFGBlock::const_pred_iterator I = block->pred_begin(),
-            E = block->pred_end(); I != E; ++I) {
-        const CFGBlock *Pred = *I;
-        if (!Pred)
-            continue;
-
-//        printf("\tRunning on pred %d\n", Pred->getBlockID());
-        BlockAnalysisContext *predCtx = blockAnalysis->get(Pred);
-        if (predCtx->cond && predCtx->cond->getStmtClassName()) {
-//        if (Pred->getTerminatorCondition()) {
-//                printf("%d %s\n", Pred->getBlockID(),
-//                        Pred->getTerminatorCondition()->getStmtClassName());
-            printf("\tcondition: %s\n", predCtx->cond->getStmtClassName());
-            predCtx->cond->dump();
-//            // Do something with cond
-        }
-    }
-}
 
 static void VisualizeCfg(AnalysisDeclContext *ac, CFG *cfg) {
     switch (printCFG) {
@@ -277,7 +301,7 @@ static void analyze(Decl *D) {
 
     llvm::BitVector previouslyVisited(cfg->getNumBlockIDs());
 
-    BlockAnalysis blockAnalysis(cfg);
+    BlockAnalysis blockAnalysis;
 
     for (CFG::const_iterator BI = cfg->begin(), BE = cfg->end(); BI != BE;
             ++BI) {
