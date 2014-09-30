@@ -97,18 +97,20 @@ static Variables variables;
 // This context exists for every block
 class BlockAnalysisContext {
     const CFGBlock *block;
-//    // If null then not a control branch. 
-//    const Stmt *cond;
+    // A reference to the global map
+    std::unordered_map<const CFGBlock *, BlockAnalysisContext *> *block2Ctx;
 
     // Abstract values
-    std::unordered_map<const CFGBlock *, ap_abstract1_t> pred2abs;
+    std::unordered_map<const CFGBlock *, ap_abstract1_t> pred2Abs;
     ap_abstract1_t abs;
 
     // Successors
     const CFGBlock *succ[2];
 public:
-    BlockAnalysisContext(const CFGBlock *block) {
+    BlockAnalysisContext(const CFGBlock *block,
+            std::unordered_map<const CFGBlock *, BlockAnalysisContext *> *block2Ctx) {
         this->block = block;
+        this->block2Ctx = block2Ctx; 
 
         // Chaotic iteration: All abstract values initialized as bottom
         for (CFGBlock::const_pred_iterator I = block->pred_begin(), E = block->pred_end(); I != E; ++I) {
@@ -116,7 +118,7 @@ public:
             if (!Pred)
                 continue;
 
-            pred2abs[Pred] = ap_abstract1_bottom(man, env);
+            pred2Abs[Pred] = ap_abstract1_bottom(man, env);
         }
 
         assert(block->succ_size() <= 2);
@@ -152,7 +154,7 @@ public:
         printf("%d) Merging preds' values. old value:", block->getBlockID());
         ap_abstract1_fprint(stdout, man, &abs);
         abs = ap_abstract1_bottom(man, env);
-        for (auto it = pred2abs.begin(); it != pred2abs.end(); ++it) {
+        for (auto it = pred2Abs.begin(); it != pred2Abs.end(); ++it) {
             ap_abstract1_t absPred = it->second;
             abs = ap_abstract1_join(man, false, &abs, &absPred);
         }
@@ -168,24 +170,23 @@ public:
 
         // Single successor: just pass this block's exit value as the successor's entry value
         if (!block->getTerminator()) {
-            succ[0]->pred2abs[this->block] = abs;
+            (*block2Ctx)[succ[0]]->pred2Abs[block] = abs;
             return;
         }
 
         // Two successors: first for 'then', second for 'else'
-        Stmt *cond = getTerminatorCondition();
-        printf("\tcondition: %s\n", predCtx->cond->getStmtClassName());
-        cond.dump();
+        const clang::Stmt *cond = block->getTerminatorCondition();
+        printf("\tcondition: %s\n", cond->getStmtClassName());
+        cond->dump();
 
-        // Do something with cond
-        succ[0]->pred2abs[this->block] = abs;
-        succ[1]->pred2abs[this->block] = abs;
+        // XXX: Do something with cond
+        (*block2Ctx)[succ[0]]->pred2Abs[block] = abs;
+        (*block2Ctx)[succ[1]]->pred2Abs[block] = abs;
     }
-
 
     void printAbs() {
         printf("Abs value: ");
-        ap_abstract1_fprint(stdout, man, &absEntry);
+        ap_abstract1_fprint(stdout, man, &abs);
     }
 };
 
@@ -195,9 +196,9 @@ class TransferFunctions : public StmtVisitor<TransferFunctions> {
 public:
   TransferFunctions(BlockAnalysisContext *analysisCtx) {
       this->analysisCtx = analysisCtx;
-      println("\tAbs value before merge:");
+      printf("\tAbs value before merge:\n");
       analysisCtx->printAbs();
-      println("\tAbs value after merge:");
+      printf("\tAbs value after merge:\n");
 
   }
 
@@ -227,27 +228,23 @@ public:
 
 class BlockAnalysis {
     // A container for BlockAnalysisContext objects
-    std::unordered_map<const CFGBlock *, BlockAnalysisContext> block2Ctx;
+    std::unordered_map<const CFGBlock *, BlockAnalysisContext *> block2Ctx;
 
 public:
     void add(const CFGBlock *block) {
-        block2Ctx[block] = BlockAnalysisContext(block);
+        block2Ctx[block] = new BlockAnalysisContext(block, &block2Ctx);
     }
 
-//    ~BlockAnalysis() {
-//        for (llvm::DenseMap<const CFGBlock *, BlockAnalysisContext *>::
-//                iterator I = block2Ctx.begin(), E = block2Ctx.end();
-//                I != E; ++I) {
-//            BlockAnalysisContext *ctx = (*I).second;
-//            if (!ctx)
-//                continue;
-//
-//            delete ctx;
-//        }
-//    }
+    ~BlockAnalysis() {
+        for (llvm::DenseMap<const CFGBlock *, BlockAnalysisContext *>::
+                iterator I = block2Ctx.begin(), E = block2Ctx.end();
+                I != E; ++I) {
+            BlockAnalysisContext *ctx = (*I).second;
+            if (!ctx)
+                continue;
 
-    BlockAnalysisContext *get(const CFGBlock *block) {
-        return block2Ctx[block];
+            delete ctx;
+        }
     }
 
     bool runOnBlock(const CFGBlock *block) {
@@ -262,7 +259,7 @@ public:
         for (CFGBlock::const_iterator I = block->begin(), E = block->end();
                 I != E; ++I) {
             if (Optional<CFGStmt> cs = I->getAs<CFGStmt>())
-                tf.Visit(const_cast<Stmt*>(cs->getStmt()));
+                tf.Visit(const_cast<clang::Stmt*>(cs->getStmt()));
         }
     
         block2Ctx[block]->updateSuccValues();
