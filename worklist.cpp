@@ -13,28 +13,28 @@
 #include "clang/Analysis/Analyses/DataflowWorklist.h"
 
 // Apron includes
-// #include "ap_global0.h"
-// #include "ap_global1.h"
-// #include "box.h"
-// #include "oct.h"
-// #include "pk.h"
-// #include "pkeq.h"
+#include "ap_global0.h"
+#include "ap_global1.h"
+#include "box.h"
+#include "oct.h"
+#include "pk.h"
+#include "pkeq.h"
 
 static int printCFG;
 static const char *funcToAnalyze;
-// static ap_manager_t* man;
-// static ap_environment_t *env;
+static ap_manager_t* man;
+static ap_environment_t *env;
 
 class Variables {
     // Maps a variable to an apron 'dimention' (index)
     std::unordered_map<const clang::VarDecl *, unsigned> var2Dim;
     clang::DeclContext *dc;
-//    ap_var_t *name_of_dim;
+    ap_var_t *name_of_dim;
     int size;
     
 public:
     Variables() {
-//        name_of_dim = NULL;
+        name_of_dim = NULL;
         size = 0;
     }
 
@@ -49,7 +49,7 @@ public:
                 ++size;
         }
 
-//        name_of_dim = new ap_var_t[size];
+        name_of_dim = new ap_var_t[size];
 
         int ind = 0;
         for (clang::DeclContext::specific_decl_iterator<clang::VarDecl> I(dc->decls_begin()),
@@ -60,20 +60,20 @@ public:
                 continue;
             }
 
-//            name_of_dim[ind] = (ap_var_t)vd->getNameAsString().c_str();
+            name_of_dim[ind] = (ap_var_t)vd->getNameAsString().c_str();
             var2Dim[vd] = ind;
             ++ind;
         }
 
         // Assuming integers only;
-//        env = ap_environment_alloc(name_of_dim, size, NULL, 0);
+        env = ap_environment_alloc(name_of_dim, size, NULL, 0);
     }
 
     ~Variables() {
-//        if (env)
-//            ap_environment_free(env);
-//        if (name_of_dim)
-//            delete [] name_of_dim;
+        if (env)
+            ap_environment_free(env);
+        if (name_of_dim)
+            delete [] name_of_dim;
     }
 
     bool isTrackedVar(const clang::VarDecl *vd) {
@@ -95,11 +95,12 @@ static Variables variables;
 class BlockAnalysisContext {
     const clang::CFGBlock *block;
     // A reference to the global map
-    std::unordered_map<const clang::CFGBlock *, BlockAnalysisContext *> *block2Ctx;
+    std::unordered_map<const clang::CFGBlock *, BlockAnalysisContext *>
+        *block2Ctx;
 
     // Abstract values
-//    std::unordered_map<const CFGBlock *, ap_abstract1_t> pred2Abs;
-//    ap_abstract1_t abs;
+    std::unordered_map<const clang::CFGBlock *, ap_abstract1_t *> pred2Abs;
+    ap_abstract1_t abs;
 
     // Successors
     const clang::CFGBlock *succ[2];
@@ -115,8 +116,10 @@ public:
             if (!Pred)
                 continue;
 
-//            pred2Abs[Pred] = ap_abstract1_bottom(man, env);
+            pred2Abs[Pred] = (ap_abstract1_t *)malloc(sizeof(ap_abstract1_t));
+            *pred2Abs[Pred] = ap_abstract1_bottom(man, env);
         }
+        abs = ap_abstract1_bottom(man, env);
 
         assert(block->succ_size() <= 2);
         // If has terminator statement => has two successors
@@ -139,24 +142,37 @@ public:
         }
     }
 
+    ~BlockAnalysisContext() {
+        for (std::unordered_map<const clang::CFGBlock *, ap_abstract1_t *>::
+                iterator I = pred2Abs.begin(), E = pred2Abs.end();
+                I != E; ++I) {
+            ap_abstract1_t *absp = (*I).second;
+            if (!absp)
+                continue;
+
+            free(absp);
+        }
+    }
+
     void updateEntryValue() {
         // Entry block
         if (block->pred_empty()) {
-//            abs = ap_abstract1_top(man, env);
+            abs = ap_abstract1_top(man, env);
             return;
         }
 
         // Merge (join) all predeseccors exit values
         
         printf("%d) Merging preds' values. old value:", block->getBlockID());
-//        ap_abstract1_fprint(stdout, man, &abs);
-//        abs = ap_abstract1_bottom(man, env);
-//        for (auto it = pred2Abs.begin(); it != pred2Abs.end(); ++it) {
-//            ap_abstract1_t absPred = it->second;
-//            abs = ap_abstract1_join(man, false, &abs, &absPred);
-//        }
-//        printf("After merge:");
-//        ap_abstract1_fprint(stdout, man, &abs);
+        ap_abstract1_fprint(stdout, man, &abs);
+
+        abs = ap_abstract1_bottom(man, env);
+        for (auto it = pred2Abs.begin(); it != pred2Abs.end(); ++it) {
+            ap_abstract1_t *absPred = it->second;
+            abs = ap_abstract1_join(man, false, &abs, absPred);
+        }
+        printf("After merge:");
+        ap_abstract1_fprint(stdout, man, &abs);
     }
 
     // Each successor holds a list of its predecessors exit values. We update the entry for this block in each
@@ -397,15 +413,15 @@ int main(int argc, const char **argv) {
     std::string contents((std::istreambuf_iterator<char>(in)), 
             std::istreambuf_iterator<char>());
 
-//    man = box_manager_alloc();
+    man = box_manager_alloc();
     printf("******************************\n");
-//    printf("Apron: Library %s, version %s\n", man->library, man->version);
+    printf("Apron: Library %s, version %s\n", man->library, man->version);
     printf("******************************\n");
 
     int ret = !clang::tooling::runToolOnCode(new ExampleFrontendAction,
             contents.c_str());
 
-//    ap_manager_free(man);
+    ap_manager_free(man);
 
     return ret;
 }
