@@ -51,7 +51,7 @@ public:
                 ++size;
         }
 
-        name_of_dim = (ap_var_t *)malloc(size * sizeof(ap_var_t));
+        name_of_dim = new ap_var_t[size];
 
         int ind = 0;
         for (DeclContext::specific_decl_iterator<VarDecl> I(dc->decls_begin()),
@@ -75,7 +75,7 @@ public:
         if (env)
             ap_environment_free(env);
         if (name_of_dim) {
-            free(name_of_dim);
+            delete [] name_of_dim;
         }
     }
 
@@ -236,7 +236,7 @@ public:
     }
 
     ~BlockAnalysis() {
-        for (llvm::DenseMap<const CFGBlock *, BlockAnalysisContext *>::
+        for (std::unordered_map<const CFGBlock *, BlockAnalysisContext *>::
                 iterator I = block2Ctx.begin(), E = block2Ctx.end();
                 I != E; ++I) {
             BlockAnalysisContext *ctx = (*I).second;
@@ -408,7 +408,7 @@ int main(int argc, const char **argv) {
     int ret = !clang::tooling::runToolOnCode(new ExampleFrontendAction,
             contents.c_str());
 
-    ap_manager_free(man);
+//    ap_manager_free(man);
 
     return ret;
 }
