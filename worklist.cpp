@@ -408,7 +408,7 @@ int main(int argc, const char **argv) {
     int ret = !clang::tooling::runToolOnCode(new ExampleFrontendAction,
             contents.c_str());
 
-//    ap_manager_free(man);
+    ap_manager_free(man);
 
     return ret;
 }
