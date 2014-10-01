@@ -30,7 +30,7 @@ static ap_environment_t *env;
 
 class Variables {
     // Maps a variable to an apron 'dimention' (index)
-    std::unordered_map<const clang::VarDecl *, unsigned> var2Dim;
+    std::unordered_map<const clang::VarDecl *, int> var2ApronDim;
     clang::DeclContext *dc;
     // If the names are not in static memory, ap_abstract1_fprint() fails
     char name_of_dim[MAX_NUMBER_VARS][MAX_VAR_NAME_LEN + 1];
@@ -68,7 +68,7 @@ public:
             assert(strlen(varName) <= MAX_VAR_NAME_LEN);
             strcpy(name_of_dim[ind], varName);
             printf("Added var %s (%d) to analysis\n", name_of_dim[ind], ind);
-            var2Dim[vd] = ind;
+            var2ApronDim[vd] = ind;
             ++ind;
         }
 
