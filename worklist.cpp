@@ -20,6 +20,9 @@
 #include "pk.h"
 #include "pkeq.h"
 
+#define MAX_NUMBER_VARS 16
+#define MAX_VAR_NAME_LEN 31
+
 static int printCFG;
 static const char *funcToAnalyze;
 static ap_manager_t* man;
@@ -29,51 +32,57 @@ class Variables {
     // Maps a variable to an apron 'dimention' (index)
     std::unordered_map<const clang::VarDecl *, unsigned> var2Dim;
     clang::DeclContext *dc;
-    ap_var_t *name_of_dim;
+    // If the names are not in static memory, ap_abstract1_fprint() fails
+    char name_of_dim[MAX_NUMBER_VARS][MAX_VAR_NAME_LEN + 1];
     int size;
     
 public:
     Variables() {
-        name_of_dim = NULL;
         size = 0;
     }
 
     void init(clang::Decl *D) {
         dc = clang::cast<clang::DeclContext>(D);
         
-        for (clang::DeclContext::specific_decl_iterator<clang::VarDecl> I(dc->decls_begin()),
-                E(dc->decls_end()); I != E; ++I) {
+        for (clang::DeclContext::specific_decl_iterator<clang::VarDecl>
+                I(dc->decls_begin()), E(dc->decls_end()); I != E; ++I) {
             const clang::VarDecl *vd = *I;
 
             if (isTrackedVar(vd))
                 ++size;
         }
 
-        name_of_dim = new ap_var_t[size];
+        printf("Will track %d vars\n", size);
+        assert(size <= MAX_NUMBER_VARS);
 
         int ind = 0;
-        for (clang::DeclContext::specific_decl_iterator<clang::VarDecl> I(dc->decls_begin()),
-                E(dc->decls_end()); I != E; ++I) {
+        for (clang::DeclContext::specific_decl_iterator<clang::VarDecl>
+                I(dc->decls_begin()), E(dc->decls_end()); I != E; ++I) {
             const clang::VarDecl *vd = *I;
 
             if (!isTrackedVar(vd)) {
                 continue;
             }
 
-            name_of_dim[ind] = (ap_var_t)vd->getNameAsString().c_str();
+            const char *varName = vd->getNameAsString().c_str();
+            assert(strlen(varName) <= MAX_VAR_NAME_LEN);
+            strcpy(name_of_dim[ind], varName);
+            printf("Added var %s (%d) to analysis\n", name_of_dim[ind], ind);
             var2Dim[vd] = ind;
             ++ind;
         }
 
+        ap_var_t tempCastArray[size];
+        for (int i = 0; i < size; ++i)
+            tempCastArray[i] = (ap_var_t)name_of_dim[i];
+
         // Assuming integers only;
-        env = ap_environment_alloc(name_of_dim, size, NULL, 0);
+        env = ap_environment_alloc(tempCastArray, size, NULL, 0);
     }
 
     ~Variables() {
         if (env)
             ap_environment_free(env);
-        if (name_of_dim)
-            delete [] name_of_dim;
     }
 
     bool isTrackedVar(const clang::VarDecl *vd) {
@@ -99,7 +108,7 @@ class BlockAnalysisContext {
         *block2Ctx;
 
     // Abstract values
-    std::unordered_map<const clang::CFGBlock *, ap_abstract1_t *> pred2Abs;
+    std::unordered_map<const clang::CFGBlock *, ap_abstract1_t> pred2Abs;
     ap_abstract1_t abs;
 
     // Successors
@@ -116,8 +125,9 @@ public:
             if (!Pred)
                 continue;
 
-            pred2Abs[Pred] = (ap_abstract1_t *)malloc(sizeof(ap_abstract1_t));
-            *pred2Abs[Pred] = ap_abstract1_bottom(man, env);
+//            pred2Abs[Pred] = (ap_abstract1_t *)malloc(sizeof(ap_abstract1_t));
+//            *pred2Abs[Pred] = ap_abstract1_bottom(man, env);
+            pred2Abs[Pred] = ap_abstract1_bottom(man, env);
         }
         abs = ap_abstract1_bottom(man, env);
 
@@ -142,18 +152,18 @@ public:
         }
     }
 
-    ~BlockAnalysisContext() {
-        for (std::unordered_map<const clang::CFGBlock *, ap_abstract1_t *>::
-                iterator I = pred2Abs.begin(), E = pred2Abs.end();
-                I != E; ++I) {
-            ap_abstract1_t *absp = (*I).second;
-            if (!absp)
-                continue;
-
-            free(absp);
-        }
-    }
-
+//    ~BlockAnalysisContext() {
+//        for (std::unordered_map<const clang::CFGBlock *, ap_abstract1_t *>::
+//                iterator I = pred2Abs.begin(), E = pred2Abs.end();
+//                I != E; ++I) {
+//            ap_abstract1_t *absp = (*I).second;
+//            if (!absp)
+//                continue;
+//
+//            free(absp);
+//        }
+//    }
+//
     void updateEntryValue() {
         // Entry block
         if (block->pred_empty()) {
@@ -168,8 +178,8 @@ public:
 
         abs = ap_abstract1_bottom(man, env);
         for (auto it = pred2Abs.begin(); it != pred2Abs.end(); ++it) {
-            ap_abstract1_t *absPred = it->second;
-            abs = ap_abstract1_join(man, false, &abs, absPred);
+            ap_abstract1_t absPred = it->second;
+            abs = ap_abstract1_join(man, false, &abs, &absPred);
         }
         printf("After merge:");
         ap_abstract1_fprint(stdout, man, &abs);
@@ -183,7 +193,7 @@ public:
 
         // Single successor: just pass this block's exit value as the successor's entry value
         if (!block->getTerminator()) {
-//            (*block2Ctx)[succ[0]]->pred2Abs[block] = abs;
+            ((*block2Ctx)[succ[0]])->pred2Abs[block] = abs;
             return;
         }
 
@@ -193,13 +203,13 @@ public:
         cond->dump();
 
         // XXX: Do something with cond
-//        (*block2Ctx)[succ[0]]->pred2Abs[block] = abs;
-//        (*block2Ctx)[succ[1]]->pred2Abs[block] = abs;
+        (*block2Ctx)[succ[0]]->pred2Abs[block] = abs;
+        (*block2Ctx)[succ[1]]->pred2Abs[block] = abs;
     }
 
     void printAbs() {
         printf("Abs value: ");
-//        ap_abstract1_fprint(stdout, man, &abs);
+        ap_abstract1_fprint(stdout, man, &abs);
     }
 };
 
