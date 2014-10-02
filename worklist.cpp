@@ -28,6 +28,56 @@ static const char *funcToAnalyze;
 static ap_manager_t* man;
 static ap_environment_t *env;
 
+class ApronHelper {
+public:
+    /* var := c */
+    static ap_abstract1_t assignConst(ap_abstract1_t abst, const char *var,
+            int c) {
+        // ap_linexpr1_make() destroys contents of *var 
+        char dest[strlen(var) + 1];
+        strcpy(dest, var);
+        ap_linexpr1_t expr = ap_linexpr1_make(env, AP_LINEXPR_SPARSE, 1);
+        ap_linexpr1_set_list(&expr,
+                   AP_CST_S_INT, c,
+                   AP_END);
+        fprintf(stdout, "Assignement (side-effect) in abstract value of %s by "
+               "expression:\n", dest);
+        ap_linexpr1_fprint(stdout, &expr);    
+
+        abst = ap_abstract1_assign_linexpr(man, true, &abst, dest, &expr, NULL);
+        fprintf(stdout, "\n");
+        ap_abstract1_fprint(stdout, man, &abst);
+        ap_linexpr1_clear(&expr);    
+
+        return abst;
+    }
+
+    // var := x + c
+    static ap_abstract1_t assignVarPlusInt(ap_abstract1_t abst, const char *var,
+            const char *x, int c) {
+        // ap_linexpr1_make() destroys contents of *var 
+        char src[strlen(x) + 1];
+        strcpy(src, x);
+        char dest[strlen(var) + 1];
+        strcpy(dest, var);
+        ap_linexpr1_t expr = ap_linexpr1_make(env, AP_LINEXPR_SPARSE, 0);
+        ap_linexpr1_set_list(&expr,
+                   AP_COEFF_S_INT, 1, src,
+                   AP_CST_S_INT, c,
+                   AP_END);
+        fprintf(stdout, "Assignement (side-effect) in abstract value of %s by "
+               "expression:\n", dest);
+        ap_linexpr1_fprint(stdout, &expr);    
+
+        abst = ap_abstract1_assign_linexpr(man, true, &abst, dest, &expr, NULL);
+        fprintf(stdout, "\n");
+        ap_abstract1_fprint(stdout, man, &abst);
+        ap_linexpr1_clear(&expr);    
+
+        return abst;
+    }    
+};
+
 class Variables {
     // Maps a variable to an apron 'dimention' (index)
     std::unordered_map<const clang::VarDecl *, int> var2ApronDim;
@@ -109,18 +159,20 @@ class BlockAnalysisContext {
 
     // Abstract values
     std::unordered_map<const clang::CFGBlock *, ap_abstract1_t> pred2Abs;
-    ap_abstract1_t abs;
+    ap_abstract1_t abst;
 
     // Successors
     const clang::CFGBlock *succ[2];
 public:
     BlockAnalysisContext(const clang::CFGBlock *block,
-            std::unordered_map<const clang::CFGBlock *, BlockAnalysisContext *> *block2Ctx) {
+            std::unordered_map<const clang::CFGBlock *, BlockAnalysisContext *>
+            *block2Ctx) {
         this->block = block;
         this->block2Ctx = block2Ctx; 
 
         // Chaotic iteration: All abstract values initialized as bottom
-        for (clang::CFGBlock::const_pred_iterator I = block->pred_begin(), E = block->pred_end(); I != E; ++I) {
+        for (clang::CFGBlock::const_pred_iterator I = block->pred_begin(),
+                E = block->pred_end(); I != E; ++I) {
             const clang::CFGBlock *Pred = *I;
             if (!Pred)
                 continue;
@@ -129,7 +181,7 @@ public:
 //            *pred2Abs[Pred] = ap_abstract1_bottom(man, env);
             pred2Abs[Pred] = ap_abstract1_bottom(man, env);
         }
-        abs = ap_abstract1_bottom(man, env);
+        abst = ap_abstract1_bottom(man, env);
 
         assert(block->succ_size() <= 2);
         // If has terminator statement => has two successors
@@ -140,7 +192,8 @@ public:
         if (block->succ_empty())
             return;
 
-        for (clang::CFGBlock::const_succ_iterator I = block->succ_begin(), E = block->succ_end(); I != E; ++I) {
+        for (clang::CFGBlock::const_succ_iterator I = block->succ_begin(),
+                E = block->succ_end(); I != E; ++I) {
             const clang::CFGBlock *s = *I;
             if (!s)
                 continue;
@@ -167,49 +220,58 @@ public:
     void updateEntryValue() {
         // Entry block
         if (block->pred_empty()) {
-            abs = ap_abstract1_top(man, env);
+            abst = ap_abstract1_top(man, env);
             return;
         }
 
         // Merge (join) all predeseccors exit values
         
         printf("%d) Merging preds' values. old value:", block->getBlockID());
-        ap_abstract1_fprint(stdout, man, &abs);
+        ap_abstract1_fprint(stdout, man, &abst);
 
-        abs = ap_abstract1_bottom(man, env);
+        abst = ap_abstract1_bottom(man, env);
         for (auto it = pred2Abs.begin(); it != pred2Abs.end(); ++it) {
             ap_abstract1_t absPred = it->second;
-            abs = ap_abstract1_join(man, false, &abs, &absPred);
+            abst = ap_abstract1_join(man, false, &abst, &absPred);
         }
         printf("After merge:");
-        ap_abstract1_fprint(stdout, man, &abs);
+        ap_abstract1_fprint(stdout, man, &abst);
     }
 
-    // Each successor holds a list of its predecessors exit values. We update the entry for this block in each
-    // of its successors' list
+    // Each successor holds a list of its predecessors exit values. We update 
+    // the entry for this block in each of its successors' list
     void updateSuccValues() {
         if (block->succ_empty())
             return;
 
-        // Single successor: just pass this block's exit value as the successor's entry value
+        // Single successor: just pass this block's exit value as the
+        // successor's entry value
         if (!block->getTerminator()) {
-            ((*block2Ctx)[succ[0]])->pred2Abs[block] = abs;
+            ((*block2Ctx)[succ[0]])->pred2Abs[block] = abst;
             return;
         }
 
         // Two successors: first for 'then', second for 'else'
         const clang::Stmt *cond = block->getTerminatorCondition();
         printf("\tcondition: %s\n", cond->getStmtClassName());
-        cond->dump();
+//        cond->dump();
 
         // XXX: Do something with cond
-        (*block2Ctx)[succ[0]]->pred2Abs[block] = abs;
-        (*block2Ctx)[succ[1]]->pred2Abs[block] = abs;
+        (*block2Ctx)[succ[0]]->pred2Abs[block] = abst;
+        (*block2Ctx)[succ[1]]->pred2Abs[block] = abst;
     }
 
     void printAbs() {
         printf("Abs value: ");
-        ap_abstract1_fprint(stdout, man, &abs);
+        ap_abstract1_fprint(stdout, man, &abst);
+    }
+
+    void assignConst(const char *var, int val) {
+        abst = ApronHelper::assignConst(abst, var, val);
+    }
+
+    void increment(const char *var) {
+        abst = ApronHelper::assignVarPlusInt(abst, var, var, 1);
     }
 };
 
@@ -219,10 +281,9 @@ class TransferFunctions : public clang::StmtVisitor<TransferFunctions> {
 public:
   TransferFunctions(BlockAnalysisContext *analysisCtx) {
       this->analysisCtx = analysisCtx;
-      printf("\tAbs value before merge:\n");
-      analysisCtx->printAbs();
-      printf("\tAbs value after merge:\n");
-
+//      printf("\tAbs value before merge:\n");
+//      analysisCtx->printAbs();
+//      printf("\tAbs value after merge:\n");
   }
 
 //  void VisitBlockExpr(BlockExpr *be);
@@ -233,20 +294,48 @@ public:
     void VisitBinaryOperator(clang::BinaryOperator *BO) {
         if (BO->getOpcode() == clang::BO_Assign) {
             printf("Assignment\n");
-            BO->getLHS()->dump();
-            BO->getRHS()->dump();
+            clang::Expr *lhs = BO->getLHS();
+            if (clang::DeclRefExpr *DR =
+                    clang::dyn_cast<clang::DeclRefExpr>(lhs)) {
+//                char *var = const_cast<char *>(
+//                        DR->getDecl()->getNameAsString().c_str());
+                const char *var = DR->getDecl()->getNameAsString().c_str();
+                printf("%s = ", var);
+                clang::Expr *rhs = BO->getRHS();
+                if (clang::IntegerLiteral *IL =
+                        clang::dyn_cast<clang::IntegerLiteral>(rhs)) {
+                    int val = (int)*IL->getValue().getRawData();
+                    printf("%d\n", val);
+                    analysisCtx->assignConst(var, val);
+                }
+            }
+        }
+    }
+
+    void VisitUnaryOperator(clang::UnaryOperator *UO) {
+        if (UO->isIncrementDecrementOp()) {
+            if (UO->isIncrementOp()) {
+                printf("Increment\n");
+                clang::Expr *sub = UO->getSubExpr();
+                if (clang::DeclRefExpr *DR =
+                        clang::dyn_cast<clang::DeclRefExpr>(sub)) {
+                    const char *var = DR->getDecl()->getNameAsString().c_str();
+                    printf("%s++\n", var);
+                    analysisCtx->increment(var);
+                }
+            }
         }
     }
     
-    void VisitDeclStmt(clang::DeclStmt *DS) {
-        printf("DeclStmt:\n");
-        DS->getSingleDecl()->dump();
-    
-        for (auto *DI : DS->decls()) {
-            clang::VarDecl *VD = clang::dyn_cast<clang::VarDecl>(DI);
-            VD->dump();
-        }
-    }
+//    void VisitDeclStmt(clang::DeclStmt *DS) {
+//        printf("DeclStmt:\n");
+//        DS->getSingleDecl()->dump();
+//    
+//        for (auto *DI : DS->decls()) {
+//            clang::VarDecl *VD = clang::dyn_cast<clang::VarDecl>(DI);
+//            VD->dump();
+//        }
+//    }
 };
 
 class BlockAnalysis {
@@ -334,8 +423,6 @@ static void analyze(clang::Decl *D) {
     blockAnalysis.runOnBlock(&cfg->getEntry());
 
     while (const clang::CFGBlock *block = worklist.dequeue()) {
-        printf("Block ID: %u\n", block->getBlockID());
-
         // Did the block change?
         bool changed = blockAnalysis.runOnBlock(block);
         

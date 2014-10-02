@@ -16,17 +16,18 @@ static void init_abstract_array(ap_abstract1_t *R, int size)
         R[i] = ap_abstract1_bottom(man, env);        
 }
 
-static ap_abstract1_t assign_const(ap_abstract1_t abs, char *var, int value)
+/* dest := c */
+static ap_abstract1_t assign_const(ap_abstract1_t abs, char *dest, int c)
 {
     ap_linexpr1_t expr = ap_linexpr1_make(env, AP_LINEXPR_SPARSE, 0);
     ap_linexpr1_set_list(&expr,
-		       AP_CST_S_INT, value,
+		       AP_CST_S_INT, c,
 		       AP_END);
     fprintf(stdout, "Assignement (side-effect) in abstract value of x by "
            "expression:\n");
     ap_linexpr1_fprint(stdout, &expr);    
 
-    abs = ap_abstract1_assign_linexpr(man, true, &abs, var, &expr, NULL);
+    abs = ap_abstract1_assign_linexpr(man, true, &abs, dest, &expr, NULL);
     fprintf(stdout, "\n");
     ap_abstract1_fprint(stdout, man, &abs);
     ap_linexpr1_clear(&expr);    
