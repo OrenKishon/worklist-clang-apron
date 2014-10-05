@@ -75,7 +75,46 @@ public:
         ap_linexpr1_clear(&expr);    
 
         return abst;
+    }
+
+    // meet (intersect) constraint x < c (-1*x + c > 0) 
+    static ap_abstract1_t meet_constraint_lt(ap_abstract1_t *abst,
+            const char *x, int c) {
+        return meet_constraint(abst, x, c, AP_CONS_SUP, -1, 1);
     }    
+
+    // meet (intersect) constraint x >= c (x - c >= 0)
+    static ap_abstract1_t meet_constraint_ge(ap_abstract1_t *abst,
+            const char *x, int c) {
+        return meet_constraint(abst, x, c, AP_CONS_SUPEQ, 1, -1);
+    }
+
+    // meet (intersect) constraint x != c (x - c != 0)
+    static ap_abstract1_t meet_constraint_ne(ap_abstract1_t *abst,
+            const char *x, int c) {
+        return meet_constraint(abst, x, c, AP_CONS_DISEQ, 1, -1);
+    }
+
+private:
+    static ap_abstract1_t meet_constraint(ap_abstract1_t *abst, const char *x,
+            int c, ap_constyp_t constyp, int coeff, int scallar_sign) {
+        // ap_linexpr1_make() destroys contents of *var 
+        char var[strlen(x) + 1];
+        strcpy(var, x);
+        ap_lincons1_array_t array = ap_lincons1_array_make(env, 1);
+        ap_linexpr1_t expr = ap_linexpr1_make(env, AP_LINEXPR_SPARSE, 0);
+        ap_lincons1_t cons = ap_lincons1_make(constyp, &expr, NULL);
+        ap_lincons1_set_list(&cons, 
+                AP_COEFF_S_INT, coeff, var,
+                AP_CST_S_INT, scallar_sign * c,
+                AP_END);
+        ap_lincons1_array_set(&array, 0, &cons);
+        ap_abstract1_t temp = ap_abstract1_of_lincons_array(man, env, &array);
+        ap_abstract1_fprint(stdout, man, &abs);
+        ap_lincons1_array_clear(&array);
+
+        return ap_abstract1_meet(man, false, abst, &temp);
+    }
 };
 
 class Variables {
@@ -240,7 +279,7 @@ public:
 
     // Each successor holds a list of its predecessors exit values. We update 
     // the entry for this block in each of its successors' list
-    void updateSuccValues() {
+    void updateSuccessors() {
         if (block->succ_empty())
             return;
 
@@ -252,13 +291,40 @@ public:
         }
 
         // Two successors: first for 'then', second for 'else'
+        ap_abstract1_t absThen, absElse;
+
         const clang::Stmt *cond = block->getTerminatorCondition();
-        printf("\tcondition: %s\n", cond->getStmtClassName());
-//        cond->dump();
+        printf("condition: %s\n", cond->getStmtClassName());
+        if (clang::BinaryOperator *BO =
+                clang::dyn_cast<clang::BinaryOperator>(cond)) {
+            if (!BO->isComparisonOp())
+                return;
+            clang::Expr *lhs = BO->getLHS();
+            if (clang::DeclRefExpr *DR =
+                    clang::dyn_cast<clang::DeclRefExpr>(lhs)) {
+                const char *x = DR->getDecl()->getNameAsString().c_str();
+                clang::Expr *rhs = BO->getRHS();
+                if (clang::IntegerLiteral *IL =
+                        clang::dyn_cast<clang::IntegerLiteral>(rhs)) {
+                    int c = (int)*IL->getValue().getRawData();
+                    printf("op: %s, %d\n", x, c);
+                    switch (BO->getOpcode()) {
+                    case BO_LT:
+                        absThen = meet_constraint_lt(&abs, x, c);
+                        absElse = meet_constraint_ge(&abs, x, c);
+                        break;
+                    case BO_NE:
+                    default:
+                        break;
+                    }
+                }
+            }
+        }
+        cond->dump();
 
         // XXX: Do something with cond
-        (*block2Ctx)[succ[0]]->pred2Abs[block] = abst;
-        (*block2Ctx)[succ[1]]->pred2Abs[block] = abst;
+        (*block2Ctx)[succ[0]]->pred2Abs[block] = abstThen;
+        (*block2Ctx)[succ[1]]->pred2Abs[block] = abstElse;
     }
 
     void printAbs() {
@@ -374,7 +440,7 @@ public:
                 tf.Visit(const_cast<clang::Stmt*>(cs->getStmt()));
         }
     
-        block2Ctx[block]->updateSuccValues();
+        block2Ctx[block]->updateSuccessors();
     
         return false;
     }
