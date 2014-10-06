@@ -86,6 +86,7 @@ public:
     // meet (intersect) constraint x >= c (x - c >= 0)
     static ap_abstract1_t meet_constraint_ge(ap_abstract1_t *abst,
             const char *x, int c) {
+        printf("1%s, %d\n", x, c);
         return meet_constraint(abst, x, c, AP_CONS_SUPEQ, 1, -1);
     }
 
@@ -95,25 +96,45 @@ public:
         return meet_constraint(abst, x, c, AP_CONS_DISEQ, 1, -1);
     }
 
+    // meet (intersect) constraint x = c (x - c = 0)
+    static ap_abstract1_t meet_constraint_eq(ap_abstract1_t *abst,
+            const char *x, int c) {
+        return meet_constraint(abst, x, c, AP_CONS_EQ, 1, -1);
+    }
+
 private:
     static ap_abstract1_t meet_constraint(ap_abstract1_t *abst, const char *x,
             int c, ap_constyp_t constyp, int coeff, int scallar_sign) {
         // ap_linexpr1_make() destroys contents of *var 
+        printf("%s, %d\n", x, c);
         char var[strlen(x) + 1];
         strcpy(var, x);
+        printf("%s, %d\n", var, c);
         ap_lincons1_array_t array = ap_lincons1_array_make(env, 1);
+        printf("X1%s, %d\n", x, c);
         ap_linexpr1_t expr = ap_linexpr1_make(env, AP_LINEXPR_SPARSE, 0);
+        printf("X2%s, %d\n", x, c);
         ap_lincons1_t cons = ap_lincons1_make(constyp, &expr, NULL);
+        printf("X3%s, %d\n", x, c);
         ap_lincons1_set_list(&cons, 
                 AP_COEFF_S_INT, coeff, var,
                 AP_CST_S_INT, scallar_sign * c,
                 AP_END);
+        printf("X4%s, %d\n", x, c);
+        ap_lincons1_fprint(stdout, &cons); printf("\n");
         ap_lincons1_array_set(&array, 0, &cons);
         ap_abstract1_t temp = ap_abstract1_of_lincons_array(man, env, &array);
-        ap_abstract1_fprint(stdout, man, &abs);
+        printf("Condition abstract value, before meet:\n");
+        ap_abstract1_fprint(stdout, man, &temp);
         ap_lincons1_array_clear(&array);
 
-        return ap_abstract1_meet(man, false, abst, &temp);
+        printf("current abstract value, before meet:\n");
+        ap_abstract1_fprint(stdout, man, abst);
+        ap_abstract1_t res = ap_abstract1_meet(man, false, abst, &temp);
+        printf("meet result:\n");
+        ap_abstract1_fprint(stdout, man, &res);
+        printf("XX%s, %d\n", x, c);
+        return res;
     }
 };
 
@@ -295,11 +316,11 @@ public:
 
         const clang::Stmt *cond = block->getTerminatorCondition();
         printf("condition: %s\n", cond->getStmtClassName());
-        if (clang::BinaryOperator *BO =
+        if (const clang::BinaryOperator *BO =
                 clang::dyn_cast<clang::BinaryOperator>(cond)) {
             if (!BO->isComparisonOp())
                 return;
-            clang::Expr *lhs = BO->getLHS();
+            clang::Expr *lhs = BO->getLHS()->IgnoreImpCasts();
             if (clang::DeclRefExpr *DR =
                     clang::dyn_cast<clang::DeclRefExpr>(lhs)) {
                 const char *x = DR->getDecl()->getNameAsString().c_str();
@@ -307,13 +328,17 @@ public:
                 if (clang::IntegerLiteral *IL =
                         clang::dyn_cast<clang::IntegerLiteral>(rhs)) {
                     int c = (int)*IL->getValue().getRawData();
-                    printf("op: %s, %d\n", x, c);
                     switch (BO->getOpcode()) {
-                    case BO_LT:
-                        absThen = meet_constraint_lt(&abs, x, c);
-                        absElse = meet_constraint_ge(&abs, x, c);
+                    case clang::BO_LT:
+                        printf("op: %s < %d\n", x, c);
+                        absThen = ApronHelper::meet_constraint_lt(&abst, x, c);
+                        absElse = ApronHelper::meet_constraint_ge(&abst, x, c);
                         break;
-                    case BO_NE:
+                    case clang::BO_NE:
+                        printf("op: %s != %d\n", x, c);
+                        absThen = ApronHelper::meet_constraint_ne(&abst, x, c);
+                        absElse = ApronHelper::meet_constraint_eq(&abst, x, c);
+                        break;
                     default:
                         break;
                     }
@@ -322,9 +347,13 @@ public:
         }
         cond->dump();
 
+        printf("Abs value, 'then': ");
+        ap_abstract1_fprint(stdout, man, &absThen);
+        printf("Abs value, 'Else': ");
+        ap_abstract1_fprint(stdout, man, &absElse);
         // XXX: Do something with cond
-        (*block2Ctx)[succ[0]]->pred2Abs[block] = abstThen;
-        (*block2Ctx)[succ[1]]->pred2Abs[block] = abstElse;
+        (*block2Ctx)[succ[0]]->pred2Abs[block] = absThen;
+        (*block2Ctx)[succ[1]]->pred2Abs[block] = absElse;
     }
 
     void printAbs() {
