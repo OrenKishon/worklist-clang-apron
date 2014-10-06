@@ -31,7 +31,7 @@ static ap_environment_t *env;
 class ApronHelper {
 public:
     /* var := c */
-    static ap_abstract1_t assignConst(ap_abstract1_t abst, const char *var,
+    static ap_abstract1_t assignConst(ap_abstract1_t abst, char *var,
             int c) {
         // ap_linexpr1_make() destroys contents of *var 
         char dest[strlen(var) + 1];
@@ -53,8 +53,8 @@ public:
     }
 
     // var := x + c
-    static ap_abstract1_t assignVarPlusInt(ap_abstract1_t abst, const char *var,
-            const char *x, int c) {
+    static ap_abstract1_t assignVarPlusInt(ap_abstract1_t abst, char *var,
+            char *x, int c) {
         // ap_linexpr1_make() destroys contents of *var 
         char src[strlen(x) + 1];
         strcpy(src, x);
@@ -79,49 +79,39 @@ public:
 
     // meet (intersect) constraint x < c (-1*x + c > 0) 
     static ap_abstract1_t meet_constraint_lt(ap_abstract1_t *abst,
-            const char *x, int c) {
+            char *x, int c) {
         return meet_constraint(abst, x, c, AP_CONS_SUP, -1, 1);
     }    
 
     // meet (intersect) constraint x >= c (x - c >= 0)
     static ap_abstract1_t meet_constraint_ge(ap_abstract1_t *abst,
-            const char *x, int c) {
-        printf("1%s, %d\n", x, c);
+            char *x, int c) {
         return meet_constraint(abst, x, c, AP_CONS_SUPEQ, 1, -1);
     }
 
     // meet (intersect) constraint x != c (x - c != 0)
     static ap_abstract1_t meet_constraint_ne(ap_abstract1_t *abst,
-            const char *x, int c) {
+            char *x, int c) {
         return meet_constraint(abst, x, c, AP_CONS_DISEQ, 1, -1);
     }
 
     // meet (intersect) constraint x = c (x - c = 0)
     static ap_abstract1_t meet_constraint_eq(ap_abstract1_t *abst,
-            const char *x, int c) {
+            char *x, int c) {
         return meet_constraint(abst, x, c, AP_CONS_EQ, 1, -1);
     }
 
 private:
-    static ap_abstract1_t meet_constraint(ap_abstract1_t *abst, const char *x,
+    static ap_abstract1_t meet_constraint(ap_abstract1_t *abst, char *var,
             int c, ap_constyp_t constyp, int coeff, int scallar_sign) {
         // ap_linexpr1_make() destroys contents of *var 
-        printf("%s, %d\n", x, c);
-        char var[strlen(x) + 1];
-        strcpy(var, x);
-        printf("%s, %d\n", var, c);
         ap_lincons1_array_t array = ap_lincons1_array_make(env, 1);
-        printf("X1%s, %d\n", x, c);
         ap_linexpr1_t expr = ap_linexpr1_make(env, AP_LINEXPR_SPARSE, 0);
-        printf("X2%s, %d\n", x, c);
         ap_lincons1_t cons = ap_lincons1_make(constyp, &expr, NULL);
-        printf("X3%s, %d\n", x, c);
         ap_lincons1_set_list(&cons, 
                 AP_COEFF_S_INT, coeff, var,
                 AP_CST_S_INT, scallar_sign * c,
                 AP_END);
-        printf("X4%s, %d\n", x, c);
-        ap_lincons1_fprint(stdout, &cons); printf("\n");
         ap_lincons1_array_set(&array, 0, &cons);
         ap_abstract1_t temp = ap_abstract1_of_lincons_array(man, env, &array);
         printf("Condition abstract value, before meet:\n");
@@ -133,7 +123,6 @@ private:
         ap_abstract1_t res = ap_abstract1_meet(man, false, abst, &temp);
         printf("meet result:\n");
         ap_abstract1_fprint(stdout, man, &res);
-        printf("XX%s, %d\n", x, c);
         return res;
     }
 };
@@ -323,7 +312,9 @@ public:
             clang::Expr *lhs = BO->getLHS()->IgnoreImpCasts();
             if (clang::DeclRefExpr *DR =
                     clang::dyn_cast<clang::DeclRefExpr>(lhs)) {
-                const char *x = DR->getDecl()->getNameAsString().c_str();
+                const char *xp = DR->getDecl()->getNameAsString().c_str();
+                char x[strlen(xp) + 1];
+                strcpy(x, xp);
                 clang::Expr *rhs = BO->getRHS();
                 if (clang::IntegerLiteral *IL =
                         clang::dyn_cast<clang::IntegerLiteral>(rhs)) {
@@ -345,13 +336,11 @@ public:
                 }
             }
         }
-        cond->dump();
 
         printf("Abs value, 'then': ");
         ap_abstract1_fprint(stdout, man, &absThen);
         printf("Abs value, 'Else': ");
         ap_abstract1_fprint(stdout, man, &absElse);
-        // XXX: Do something with cond
         (*block2Ctx)[succ[0]]->pred2Abs[block] = absThen;
         (*block2Ctx)[succ[1]]->pred2Abs[block] = absElse;
     }
@@ -361,11 +350,11 @@ public:
         ap_abstract1_fprint(stdout, man, &abst);
     }
 
-    void assignConst(const char *var, int val) {
+    void assignConst(char *var, int val) {
         abst = ApronHelper::assignConst(abst, var, val);
     }
 
-    void increment(const char *var) {
+    void increment(char *var) {
         abst = ApronHelper::assignVarPlusInt(abst, var, var, 1);
     }
 };
@@ -394,7 +383,9 @@ public:
                     clang::dyn_cast<clang::DeclRefExpr>(lhs)) {
 //                char *var = const_cast<char *>(
 //                        DR->getDecl()->getNameAsString().c_str());
-                const char *var = DR->getDecl()->getNameAsString().c_str();
+                const char *varp = DR->getDecl()->getNameAsString().c_str();
+                char var[strlen(varp) + 1];
+                strcpy(var, varp);
                 printf("%s = ", var);
                 clang::Expr *rhs = BO->getRHS();
                 if (clang::IntegerLiteral *IL =
@@ -414,7 +405,9 @@ public:
                 clang::Expr *sub = UO->getSubExpr();
                 if (clang::DeclRefExpr *DR =
                         clang::dyn_cast<clang::DeclRefExpr>(sub)) {
-                    const char *var = DR->getDecl()->getNameAsString().c_str();
+                    const char *varp = DR->getDecl()->getNameAsString().c_str();
+                    char var[strlen(varp) + 1];
+                    strcpy(var, varp);
                     printf("%s++\n", var);
                     analysisCtx->increment(var);
                 }
