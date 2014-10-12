@@ -5,5 +5,6 @@ Implementation of the work list algorithm for abstract interpretation, combining
 
 Compile
 =======
+Install the clang and apron libraries.
 In 'Makefile', Change the variables LLVM_PATH and APRON_PATH to your
 installation directories of llvm and apron. Then, run ./build.sh.
