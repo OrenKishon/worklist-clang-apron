@@ -40,13 +40,8 @@ public:
         ap_linexpr1_set_list(&expr,
                    AP_CST_S_INT, c,
                    AP_END);
-        fprintf(stdout, "Assignement (side-effect) in abstract value of %s by "
-               "expression:\n", dest);
-        ap_linexpr1_fprint(stdout, &expr);    
 
         abst = ap_abstract1_assign_linexpr(man, true, &abst, dest, &expr, NULL);
-        fprintf(stdout, "\n");
-        ap_abstract1_fprint(stdout, man, &abst);
         ap_linexpr1_clear(&expr);    
 
         return abst;
@@ -65,13 +60,8 @@ public:
                    AP_COEFF_S_INT, 1, src,
                    AP_CST_S_INT, c,
                    AP_END);
-        fprintf(stdout, "Assignement (side-effect) in abstract value of %s by "
-               "expression:\n", dest);
-        ap_linexpr1_fprint(stdout, &expr);    
 
         abst = ap_abstract1_assign_linexpr(man, true, &abst, dest, &expr, NULL);
-        fprintf(stdout, "\n");
-        ap_abstract1_fprint(stdout, man, &abst);
         ap_linexpr1_clear(&expr);    
 
         return abst;
@@ -92,7 +82,13 @@ public:
     // meet (intersect) constraint x != c (x - c != 0)
     static ap_abstract1_t meet_constraint_ne(ap_abstract1_t *abst,
             char *x, int c) {
-        return meet_constraint(abst, x, c, AP_CONS_DISEQ, 1, -1);
+//        return meet_constraint(abst, x, c, AP_CONS_DISEQ, 1, -1);
+
+        // Instead of using '!=' we do: join(meet(ABS, x<c), meet(ABS, x>c)).
+        // If (x=[c, c]) then the result will be bottom.
+        ap_abstract1_t a = meet_constraint_lt(abst, x, c);
+        ap_abstract1_t b = meet_constraint_ge(abst, x, c + 1);
+        return ap_abstract1_join(man, false, &a, &b);
     }
 
     // meet (intersect) constraint x = c (x - c = 0)
@@ -114,24 +110,15 @@ private:
                 AP_END);
         ap_lincons1_array_set(&array, 0, &cons);
         ap_abstract1_t temp = ap_abstract1_of_lincons_array(man, env, &array);
-        printf("Condition abstract value, before meet:\n");
-        ap_abstract1_fprint(stdout, man, &temp);
         ap_lincons1_array_clear(&array);
 
-        printf("current abstract value, before meet:\n");
-        ap_abstract1_fprint(stdout, man, abst);
         ap_abstract1_t res = ap_abstract1_meet(man, false, abst, &temp);
-        printf("meet result:\n");
-        ap_abstract1_fprint(stdout, man, &res);
         return res;
     }
 };
 
 class Variables {
-    // Maps a variable to an apron 'dimention' (index)
-    std::unordered_map<const clang::VarDecl *, int> var2ApronDim;
     clang::DeclContext *dc;
-    // If the names are not in static memory, ap_abstract1_fprint() fails
     char name_of_dim[MAX_NUMBER_VARS][MAX_VAR_NAME_LEN + 1];
     int size;
     
@@ -167,7 +154,6 @@ public:
             assert(strlen(varName) <= MAX_VAR_NAME_LEN);
             strcpy(name_of_dim[ind], varName);
             printf("Added var %s (%d) to analysis\n", name_of_dim[ind], ind);
-            var2ApronDim[vd] = ind;
             ++ind;
         }
 
@@ -226,8 +212,6 @@ public:
             if (!Pred)
                 continue;
 
-//            pred2Abs[Pred] = (ap_abstract1_t *)malloc(sizeof(ap_abstract1_t));
-//            *pred2Abs[Pred] = ap_abstract1_bottom(man, env);
             pred2Abs[Pred] = ap_abstract1_bottom(man, env);
         }
         abst = ap_abstract1_bottom(man, env);
@@ -254,37 +238,26 @@ public:
         }
     }
 
-//    ~BlockAnalysisContext() {
-//        for (std::unordered_map<const clang::CFGBlock *, ap_abstract1_t *>::
-//                iterator I = pred2Abs.begin(), E = pred2Abs.end();
-//                I != E; ++I) {
-//            ap_abstract1_t *absp = (*I).second;
-//            if (!absp)
-//                continue;
-//
-//            free(absp);
-//        }
-//    }
-//
-    void updateEntryValue() {
+    // Returns true if entry value has now changed
+    bool updateEntryValue() {
         // Entry block
         if (block->pred_empty()) {
             abst = ap_abstract1_top(man, env);
-            return;
+            return true;
         }
+        ap_abstract1_t prev = abst;
 
         // Merge (join) all predeseccors exit values
-        
-        printf("%d) Merging preds' values. old value:", block->getBlockID());
-        ap_abstract1_fprint(stdout, man, &abst);
-
         abst = ap_abstract1_bottom(man, env);
         for (auto it = pred2Abs.begin(); it != pred2Abs.end(); ++it) {
             ap_abstract1_t absPred = it->second;
             abst = ap_abstract1_join(man, false, &abst, &absPred);
         }
-        printf("After merge:");
+        printf("Prev value: ");
+        ap_abstract1_fprint(stdout, man, &prev);
+        printf("Curr value: ");
         ap_abstract1_fprint(stdout, man, &abst);
+        return !ap_abstract1_is_eq(man, &abst, &prev);
     }
 
     // Each successor holds a list of its predecessors exit values. We update 
@@ -304,7 +277,6 @@ public:
         ap_abstract1_t absThen, absElse;
 
         const clang::Stmt *cond = block->getTerminatorCondition();
-        printf("condition: %s\n", cond->getStmtClassName());
         if (const clang::BinaryOperator *BO =
                 clang::dyn_cast<clang::BinaryOperator>(cond)) {
             if (!BO->isComparisonOp())
@@ -321,12 +293,10 @@ public:
                     int c = (int)*IL->getValue().getRawData();
                     switch (BO->getOpcode()) {
                     case clang::BO_LT:
-                        printf("op: %s < %d\n", x, c);
                         absThen = ApronHelper::meet_constraint_lt(&abst, x, c);
                         absElse = ApronHelper::meet_constraint_ge(&abst, x, c);
                         break;
                     case clang::BO_NE:
-                        printf("op: %s != %d\n", x, c);
                         absThen = ApronHelper::meet_constraint_ne(&abst, x, c);
                         absElse = ApronHelper::meet_constraint_eq(&abst, x, c);
                         break;
@@ -337,17 +307,12 @@ public:
             }
         }
 
-        printf("Abs value, 'then': ");
+        printf("Then branch:\n");
         ap_abstract1_fprint(stdout, man, &absThen);
-        printf("Abs value, 'Else': ");
+        printf("Else branch:\n");
         ap_abstract1_fprint(stdout, man, &absElse);
         (*block2Ctx)[succ[0]]->pred2Abs[block] = absThen;
         (*block2Ctx)[succ[1]]->pred2Abs[block] = absElse;
-    }
-
-    void printAbs() {
-        printf("Abs value: ");
-        ap_abstract1_fprint(stdout, man, &abst);
     }
 
     void assignConst(char *var, int val) {
@@ -357,6 +322,10 @@ public:
     void increment(char *var) {
         abst = ApronHelper::assignVarPlusInt(abst, var, var, 1);
     }
+
+    void print() {
+        ap_abstract1_fprint(stdout, man, &abst);
+    }
 };
 
 class TransferFunctions : public clang::StmtVisitor<TransferFunctions> {
@@ -365,9 +334,6 @@ class TransferFunctions : public clang::StmtVisitor<TransferFunctions> {
 public:
   TransferFunctions(BlockAnalysisContext *analysisCtx) {
       this->analysisCtx = analysisCtx;
-//      printf("\tAbs value before merge:\n");
-//      analysisCtx->printAbs();
-//      printf("\tAbs value after merge:\n");
   }
 
 //  void VisitBlockExpr(BlockExpr *be);
@@ -377,21 +343,16 @@ public:
 //  void VisitObjCMessageExpr(ObjCMessageExpr *ME);
     void VisitBinaryOperator(clang::BinaryOperator *BO) {
         if (BO->getOpcode() == clang::BO_Assign) {
-            printf("Assignment\n");
             clang::Expr *lhs = BO->getLHS();
             if (clang::DeclRefExpr *DR =
                     clang::dyn_cast<clang::DeclRefExpr>(lhs)) {
-//                char *var = const_cast<char *>(
-//                        DR->getDecl()->getNameAsString().c_str());
                 const char *varp = DR->getDecl()->getNameAsString().c_str();
                 char var[strlen(varp) + 1];
                 strcpy(var, varp);
-                printf("%s = ", var);
                 clang::Expr *rhs = BO->getRHS();
                 if (clang::IntegerLiteral *IL =
                         clang::dyn_cast<clang::IntegerLiteral>(rhs)) {
                     int val = (int)*IL->getValue().getRawData();
-                    printf("%d\n", val);
                     analysisCtx->assignConst(var, val);
                 }
             }
@@ -401,14 +362,12 @@ public:
     void VisitUnaryOperator(clang::UnaryOperator *UO) {
         if (UO->isIncrementDecrementOp()) {
             if (UO->isIncrementOp()) {
-                printf("Increment\n");
                 clang::Expr *sub = UO->getSubExpr();
                 if (clang::DeclRefExpr *DR =
                         clang::dyn_cast<clang::DeclRefExpr>(sub)) {
                     const char *varp = DR->getDecl()->getNameAsString().c_str();
                     char var[strlen(varp) + 1];
                     strcpy(var, varp);
-                    printf("%s++\n", var);
                     analysisCtx->increment(var);
                 }
             }
@@ -436,9 +395,9 @@ public:
     }
 
     ~BlockAnalysis() {
-        for (std::unordered_map<const clang::CFGBlock *, BlockAnalysisContext *>::
-                iterator I = block2Ctx.begin(), E = block2Ctx.end();
-                I != E; ++I) {
+        for (std::unordered_map<const clang::CFGBlock *,
+                BlockAnalysisContext *>::iterator I = block2Ctx.begin(),
+                E = block2Ctx.end(); I != E; ++I) {
             BlockAnalysisContext *ctx = (*I).second;
             if (!ctx)
                 continue;
@@ -448,23 +407,35 @@ public:
     }
 
     bool runOnBlock(const clang::CFGBlock *block) {
-        printf("Run on block B[%d]\n", block->getBlockID());
+        BlockAnalysisContext *analysisCtx = block2Ctx[block];
+        if (!analysisCtx->updateEntryValue())
+            return false;
 
-        block2Ctx[block]->updateEntryValue();
-
+        printf("%d changed\n", block->getBlockID());
         // Apply the transfer function.
-    //    TransferFunctions tf(vals, cfg, block, ac, classification, handler);
-        TransferFunctions tf(block2Ctx[block]);
+        TransferFunctions tf(analysisCtx);
     
-        for (clang::CFGBlock::const_iterator I = block->begin(), E = block->end();
-                I != E; ++I) {
+        for (clang::CFGBlock::const_iterator I = block->begin(),
+                E = block->end(); I != E; ++I) {
             if (clang::Optional<clang::CFGStmt> cs = I->getAs<clang::CFGStmt>())
                 tf.Visit(const_cast<clang::Stmt*>(cs->getStmt()));
         }
     
-        block2Ctx[block]->updateSuccessors();
+        analysisCtx->updateSuccessors();
     
-        return false;
+        return true;
+    }
+
+    void print() {
+        printf("Each block abstract value:\n");
+        for (std::unordered_map<const clang::CFGBlock *,
+                BlockAnalysisContext *>::iterator I = block2Ctx.begin(),
+                E = block2Ctx.end(); I != E; ++I) {
+            const clang::CFGBlock *block = (*I).first;
+            BlockAnalysisContext *ctx = (*I).second;
+            printf("[B%d] ", block->getBlockID());
+            ctx->print();
+        }
     }
 };
 
@@ -493,31 +464,33 @@ static void analyze(clang::Decl *D) {
 
     VisualizeCfg(&ac, cfg);
 
-    clang::ForwardDataflowWorklist worklist(*cfg, ac);
-    worklist.enqueueSuccessors(&cfg->getEntry());
-
-    llvm::BitVector previouslyVisited(cfg->getNumBlockIDs());
-
     BlockAnalysis blockAnalysis;
-
-    for (clang::CFG::const_iterator BI = cfg->begin(), BE = cfg->end(); BI != BE;
-            ++BI) {
+    for (clang::CFG::const_iterator BI = cfg->begin(), BE = cfg->end();
+            BI != BE; ++BI) {
         const clang::CFGBlock *block = *BI;
 
         blockAnalysis.add(block);
     }
-    
 
-    blockAnalysis.runOnBlock(&cfg->getEntry());
-
+    clang::ForwardDataflowWorklist worklist(*cfg, ac);
+    worklist.enqueueBlock(&cfg->getEntry());
     while (const clang::CFGBlock *block = worklist.dequeue()) {
         // Did the block change?
+        printf("\n[B%d]\n", block->getBlockID());
         bool changed = blockAnalysis.runOnBlock(block);
         
-        if (changed || !previouslyVisited[block->getBlockID()])
+        if (changed) {
+            printf("Enqueing: ");
+            for (clang::CFGBlock::const_succ_iterator I = block->succ_begin(),
+                    E = block->succ_end(); I != E; ++I) {
+                printf("[B%d] ", (*I)->getBlockID());
+            }
+            printf("\n");
             worklist.enqueueSuccessors(block);
-        previouslyVisited[block->getBlockID()] = true;
-    }     
+        }
+    }
+    printf("Fixed point reached\n");
+    blockAnalysis.print();
 }
 
 class ExampleVisitor : public clang::RecursiveASTVisitor<ExampleVisitor> {
@@ -598,6 +571,7 @@ int main(int argc, const char **argv) {
     std::string contents((std::istreambuf_iterator<char>(in)), 
             std::istreambuf_iterator<char>());
 
+    // Interval package
     man = box_manager_alloc();
     printf("******************************\n");
     printf("Apron: Library %s, version %s\n", man->library, man->version);
