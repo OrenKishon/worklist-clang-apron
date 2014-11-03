@@ -80,6 +80,12 @@ worklist: worklist.o
 worklist.o: worklist.cpp
 	$(CXX) $(CXXFLAGS_DEBUG) $(WORKLISTIFLAGS) -c -o $@ $< `$(LLVM_PATH)/build/Debug+Asserts/bin/llvm-config --cxxflags`
 
+worklist-dev: worklist-dev.o
+	$(CXX) -Wcast-align $(CXXFLAGS) $(WORKLISTIFLAGS) $(WORKLISTLFLAGS) -o $@ $< -lpolka -loctMPQ -lboxMPQ_debug -lapron_debug -litvMPQ_debug -lmpfr -lgmp $(LIB) `$(LLVM_PATH)/build/Debug+Asserts/bin/llvm-config --cxxflags --ldflags --libs all --system-libs`
+    
+worklist-dev.o: worklist-dev.cpp
+	$(CXX) $(CXXFLAGS_DEBUG) $(WORKLISTIFLAGS) -c -o $@ $< `$(LLVM_PATH)/build/Debug+Asserts/bin/llvm-config --cxxflags`
+
 # OCaml examples
 
 ml: mlexample1.opt
@@ -100,7 +106,7 @@ test.opt: test.cmx
 #
 
 clean:
-	rm -f worklist loop_example_aprong example1g *.cm[ioxa] *.o mlexample1 mlexample2 mlexample3 mlexample4 mlexample5 *.opt selectionsortg loop
+	rm -f worklist-dev worklist loop_example_aprong example1g *.cm[ioxa] *.o mlexample1 mlexample2 mlexample3 mlexample4 mlexample5 *.opt selectionsortg loop
 
 distclean: clean
 
