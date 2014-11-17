@@ -1,12 +1,22 @@
+
 #include <stdio.h>
 
 void test()
 {
-  int x = 1;
-
-  if(x == 0) {
-    printf("hello");
+  //int x = 1;
+  //int y = 3;
+  //int x[3];
+  int xow = 3;
+  int ydd = 2;
+  if(xow != 2) {
+    ydd = 3;
   }
+  //int z = x[y];
+  //int z = x + z; 
+  
+  //  if(x == 0) {
+  //  printf("hello");
+  //}
   //  int i;
 
   //for(i = 0; i < 10; i++) {
