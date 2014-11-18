@@ -259,9 +259,9 @@ public:
   }
 
   char *getLastVar() {
-    if (usedVars.size() == 0) {
+    if (usedVars.size() == 0)
       return NULL;
-    }
+
     return usedVars[usedVars.size()-1];
   }
 
