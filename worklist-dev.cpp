@@ -1,4 +1,3 @@
- 
 #include <iostream>     // std::cout
 #include <fstream>      // std::ifstream
 #include <string>
@@ -34,18 +33,19 @@ class ApronHelper {
 public:
   /* var1 := expr */ 
   static ap_abstract1_t assignExpr(ap_abstract1_t abst, char *var,
-				   std::vector<std::string> *exprItems,
-				   std::vector<int> *coeffs) {
+                                   std::vector<std::string> *exprItems,
+                                   std::vector<int> *coeffs) {
     // ap_linexpr1_make() destroys contents of *var 
     char dest[strlen(var) + 1];
     strcpy(dest, var);
-    ap_linexpr1_t expr = ap_linexpr1_make(env, AP_LINEXPR_SPARSE, exprItems->size() + 2);    
+    ap_linexpr1_t expr = ap_linexpr1_make(env, AP_LINEXPR_SPARSE,
+            exprItems->size() + 2);    
     ap_scalar_t *scalar = ap_scalar_alloc_set_double(1);    
     char *src[strlen(var) + 1];
     ap_linexpr1_set_coeff_scalar(&expr, src, scalar);
 
     assert(exprItems->size() == coeffs->size());
-    for(unsigned int i = 0; i < exprItems->size(); ++i) {
+    for (unsigned int i = 0; i < exprItems->size(); ++i) {
       int len = exprItems->at(i).size() + 1;
       char *var2 = new char[len];
       strcpy(var2, exprItems->at(i).c_str()); 
@@ -63,7 +63,7 @@ public:
 
   /* var1 := var2 */ 
   static ap_abstract1_t assignVar(ap_abstract1_t abst, char *var1,
-				  char *var2) {
+                                  char *var2) {
     // ap_linexpr1_make() destroys contents of *var 
     char dest[strlen(var1) + 1];
     char src[strlen(var2) + 1];
@@ -71,8 +71,8 @@ public:
     strcpy(src, var2);
     ap_linexpr1_t expr = ap_linexpr1_make(env, AP_LINEXPR_SPARSE, 1);
     ap_linexpr1_set_list(&expr,
-			AP_COEFF_S_INT,1,src,
-			AP_END);
+                        AP_COEFF_S_INT, 1, src, 
+                        AP_END);
  
     abst = ap_abstract1_assign_linexpr(man, true, &abst, dest, &expr, NULL);
     ap_linexpr1_clear(&expr);    
@@ -81,15 +81,15 @@ public:
   } 
 
   /* var := c */
-  static ap_abstract1_t assignConst(ap_abstract1_t abst, char *var,
-				    int c) {
+  static ap_abstract1_t assignConst(ap_abstract1_t abst, char *var, int c) {
     // ap_linexpr1_make() destroys contents of *var
     char dest[strlen(var) + 1];
     strcpy(dest, var);
     ap_linexpr1_t expr = ap_linexpr1_make(env, AP_LINEXPR_SPARSE, 1);
     ap_linexpr1_set_list(&expr,
-			 AP_CST_S_INT, c,
-			 AP_END);
+                         AP_CST_S_INT, c,
+                         AP_END);
+
     abst = ap_abstract1_assign_linexpr(man, true, &abst, dest, &expr, NULL);
     ap_linexpr1_clear(&expr);
     return abst;
@@ -97,20 +97,21 @@ public:
 
   /* a[ind] */
   static ap_abstract1_t addArrayIndexConst(ap_abstract1_t abst, 
-					   char* indVar, int size) {
-    ap_lincons1_array_t array = ap_lincons1_array_make(env,2);
+                                           char* indVar, int size) {
+    ap_lincons1_array_t array = ap_lincons1_array_make(env, 2);
     char dest[strlen(indVar) + 1];
     strcpy(dest, indVar);
-    ap_linexpr1_t expr = ap_linexpr1_make(env,AP_LINEXPR_SPARSE,0);
-    ap_lincons1_t cons = ap_lincons1_make(AP_CONS_SUPEQ,&expr,NULL);
-    ap_linexpr1_set_list(&expr, AP_COEFF_S_INT,1,dest,AP_END);
-    ap_lincons1_array_set(&array,0,&cons);
-    expr = ap_linexpr1_make(env,AP_LINEXPR_SPARSE,1);
-    cons = ap_lincons1_make(AP_CONS_SUP,&expr,NULL);
-    ap_linexpr1_set_list(&expr, AP_COEFF_S_INT,-1,dest,AP_CST_S_INT,size, AP_END);
-    ap_lincons1_array_set(&array,1,&cons);
-    abst = ap_abstract1_of_lincons_array(man,env,&array);
-    ap_abstract1_fprint(stdout,man,&abst);
+    ap_linexpr1_t expr = ap_linexpr1_make(env, AP_LINEXPR_SPARSE, 0);
+    ap_lincons1_t cons = ap_lincons1_make(AP_CONS_SUPEQ, &expr, NULL);
+    ap_linexpr1_set_list(&expr, AP_COEFF_S_INT, 1, dest, AP_END);
+    ap_lincons1_array_set(&array, 0, &cons);
+    expr = ap_linexpr1_make(env, AP_LINEXPR_SPARSE, 1);
+    cons = ap_lincons1_make(AP_CONS_SUP, &expr, NULL);
+    ap_linexpr1_set_list(&expr, AP_COEFF_S_INT, -1, dest, AP_CST_S_INT,
+            size, AP_END);
+    ap_lincons1_array_set(&array, 1, &cons);
+    abst = ap_abstract1_of_lincons_array(man, env, &array);
+    ap_abstract1_fprint(stdout, man, &abst);
     ap_lincons1_array_clear(&array);
     ap_linexpr1_clear(&expr);
     return abst;
@@ -118,7 +119,7 @@ public:
 
   // var := x + c
   static ap_abstract1_t assignVarPlusInt(ap_abstract1_t abst, char *var,
-					 char *x, int c) {
+                                         char *x, int c) {
     // ap_linexpr1_make() destroys contents of *var
     char src[strlen(x) + 1];
     strcpy(src, x);
@@ -126,9 +127,9 @@ public:
     strcpy(dest, var);
     ap_linexpr1_t expr = ap_linexpr1_make(env, AP_LINEXPR_SPARSE, 0);
     ap_linexpr1_set_list(&expr,
-			 AP_COEFF_S_INT, 1, src,
-			 AP_CST_S_INT, c,
-			 AP_END);
+                         AP_COEFF_S_INT, 1, src,
+                         AP_CST_S_INT, c,
+                         AP_END);
     abst = ap_abstract1_assign_linexpr(man, true, &abst, dest, &expr, NULL);
     ap_linexpr1_clear(&expr);
     return abst;
@@ -136,7 +137,7 @@ public:
 
   // var := x * c
   static ap_abstract1_t assignVarMulInt(ap_abstract1_t abst, char *var,
-					 char *x, int c) {
+                                         char *x, int c) {
     // ap_linexpr1_make() destroys contents of *var
     char src[strlen(x) + 1];
     strcpy(src, x);
@@ -144,8 +145,8 @@ public:
     strcpy(dest, var);
     ap_linexpr1_t expr = ap_linexpr1_make(env, AP_LINEXPR_SPARSE, 0);
     ap_linexpr1_set_list(&expr,
-			 AP_COEFF_S_INT, c, src,
-			 AP_END);
+                         AP_COEFF_S_INT, c, src,
+                         AP_END);
     abst = ap_abstract1_assign_linexpr(man, true, &abst, dest, &expr, NULL);
     ap_linexpr1_clear(&expr);
     return abst;
@@ -153,19 +154,19 @@ public:
 
   // meet (intersect) constraint x < c (-1*x + c > 0)
   static ap_abstract1_t meet_constraint_lt(ap_abstract1_t *abst,
-					   char *x, int c) {
+                                           char *x, int c) {
     return meet_constraint(abst, x, c, AP_CONS_SUP, -1, 1);
   }
 
   // meet (intersect) constraint x >= c (x - c >= 0)
   static ap_abstract1_t meet_constraint_ge(ap_abstract1_t *abst,
-					   char *x, int c) {
+                                           char *x, int c) {
     return meet_constraint(abst, x, c, AP_CONS_SUPEQ, 1, -1);
   }
 
   // meet (intersect) constraint x != c (x - c != 0)
   static ap_abstract1_t meet_constraint_ne(ap_abstract1_t *abst,
-					   char *x, int c) {
+                                           char *x, int c) {
     // return meet_constraint(abst, x, c, AP_CONS_DISEQ, 1, -1);
     // Instead of using '!=' we do: join(meet(ABS, x<c), meet(ABS, x>c)).
     // If (x=[c, c]) then the result will be bottom.
@@ -176,21 +177,21 @@ public:
 
   // meet (intersect) constraint x = c (x - c = 0)
   static ap_abstract1_t meet_constraint_eq(ap_abstract1_t *abst,
-					   char *x, int c) {
+                                           char *x, int c) {
     return meet_constraint(abst, x, c, AP_CONS_EQ, 1, -1);
   }
 
 private:
   static ap_abstract1_t meet_constraint(ap_abstract1_t *abst, char *var,
-					int c, ap_constyp_t constyp, int coeff, int scallar_sign) {
+                                        int c, ap_constyp_t constyp, int coeff, int scallar_sign) {
     // ap_linexpr1_make() destroys contents of *var
     ap_lincons1_array_t array = ap_lincons1_array_make(env, 1);
     ap_linexpr1_t expr = ap_linexpr1_make(env, AP_LINEXPR_SPARSE, 0);
     ap_lincons1_t cons = ap_lincons1_make(constyp, &expr, NULL);
     ap_lincons1_set_list(&cons,
-			 AP_COEFF_S_INT, coeff, var,
-			 AP_CST_S_INT, scallar_sign * c,
-			 AP_END);
+                         AP_COEFF_S_INT, coeff, var,
+                         AP_CST_S_INT, scallar_sign * c,
+                         AP_END);
     ap_lincons1_array_set(&array, 0, &cons);
     ap_abstract1_t temp = ap_abstract1_of_lincons_array(man, env, &array);
     ap_lincons1_array_clear(&array);
@@ -217,30 +218,38 @@ public:
 
   void init(clang::Decl *D) {
     dc = clang::cast<clang::DeclContext>(D);
+
     for (clang::DeclContext::specific_decl_iterator<clang::VarDecl>
-	   I(dc->decls_begin()), E(dc->decls_end()); I != E; ++I) {
+           I(dc->decls_begin()), E(dc->decls_end()); I != E; ++I) {
       const clang::VarDecl *vd = *I;
+
       if (isTrackedVar(vd))
-	++size;
+        ++size;
     }
+
     printf("Will track %d vars\n", size);
     assert(size <= MAX_NUMBER_VARS);
+
     int ind = 0;
     for (clang::DeclContext::specific_decl_iterator<clang::VarDecl>
-	   I(dc->decls_begin()), E(dc->decls_end()); I != E; ++I) {
+           I(dc->decls_begin()), E(dc->decls_end()); I != E; ++I) {
       const clang::VarDecl *vd = *I;
+
       if (!isTrackedVar(vd)) {
-	continue;
+        continue;
       }
+
       const char *varName = vd->getNameAsString().c_str();
       assert(strlen(varName) <= MAX_VAR_NAME_LEN);
       strcpy(name_of_dim[ind], varName);
       printf("Added var %s (%d) to analysis\n", name_of_dim[ind], ind);
       ++ind;
     }
+
     ap_var_t tempCastArray[size];
     for (int i = 0; i < size; ++i)
       tempCastArray[i] = (ap_var_t)name_of_dim[i];
+
     // Assuming integers only;
     env = ap_environment_alloc(tempCastArray, size, NULL, 0);
   }
@@ -252,16 +261,18 @@ public:
 
   bool isTrackedVar(const clang::VarDecl *vd) {
     if (vd->isLocalVarDecl() && !vd->hasGlobalStorage() &&
-	!vd->isExceptionVariable() && !vd->isInitCapture() &&
-	vd->getDeclContext() == dc) {
-      clang::QualType ty = vd->getType();
-      return ty->isScalarType() || ty->isVectorType();
+            !vd->isExceptionVariable() && !vd->isInitCapture() &&
+            vd->getDeclContext() == dc) {
+        clang::QualType ty = vd->getType();
+
+        return ty->isScalarType() || ty->isVectorType();
     }
+
     return false;
   }
 
   void addUsedVar(char *vd) {        
-    if(!collectVariables) {
+    if (!collectVariables) {
       return;
     }
     char var[strlen(vd) + 1];
@@ -274,7 +285,7 @@ public:
   }
 
   const std::string getLastVar() {
-    if(usedVars.size() == 0) {
+    if (usedVars.size() == 0) {
       return "";
     }
     return usedVars[usedVars.size()-1];
@@ -287,7 +298,7 @@ public:
   }
 
   void addVarCoeff(int coeff) {
-    if(!collectVariables) {
+    if (!collectVariables) {
       return;
     }
     varCoeffs.push_back(coeff);
@@ -306,42 +317,50 @@ class BlockAnalysisContext {
   // A reference to the global map
   std::unordered_map<const clang::CFGBlock *, BlockAnalysisContext *>
   *block2Ctx;
+
   // Abstract values
   std::unordered_map<const clang::CFGBlock *, ap_abstract1_t> pred2Abs;
   ap_abstract1_t abst;
+
   // Successors
   const clang::CFGBlock *succ[2];
 public:
   BlockAnalysisContext(const clang::CFGBlock *block,
-		       std::unordered_map<const clang::CFGBlock *, BlockAnalysisContext *>
-		       *block2Ctx) {
+                       std::unordered_map<const clang::CFGBlock *,
+               BlockAnalysisContext *> *block2Ctx) {
     this->block = block;
     this->block2Ctx = block2Ctx;
+
     // Chaotic iteration: All abstract values initialized as bottom
     for (clang::CFGBlock::const_pred_iterator I = block->pred_begin(),
-	   E = block->pred_end(); I != E; ++I) {
+           E = block->pred_end(); I != E; ++I) {
       const clang::CFGBlock *Pred = *I;
       if (!Pred)
-	continue;
+        continue;
+
       pred2Abs[Pred] = ap_abstract1_bottom(man, env);
     }
     abst = ap_abstract1_bottom(man, env);
+
     assert(block->succ_size() <= 2);
     // If has terminator statement => has two successors
     assert(!block->getTerminator() || block->succ_size() == 2);
+
     succ[0] = NULL;
     succ[1] = NULL;
     if (block->succ_empty())
       return;
+
     for (clang::CFGBlock::const_succ_iterator I = block->succ_begin(),
-	   E = block->succ_end(); I != E; ++I) {
+           E = block->succ_end(); I != E; ++I) {
       const clang::CFGBlock *s = *I;
       if (!s)
-	continue;
+        continue;
+
       if (!succ[0])
-	succ[0] = s;
+        succ[0] = s;
       else
-	succ[1] = s;
+        succ[1] = s;
     }
   }
 
@@ -353,6 +372,7 @@ public:
       return true;
     }
     ap_abstract1_t prev = abst;
+
     // Merge (join) all predeseccors exit values
     abst = ap_abstract1_bottom(man, env);
     for (auto it = pred2Abs.begin(); it != pred2Abs.end(); ++it) {
@@ -371,58 +391,63 @@ public:
   void updateSuccessors() {
     if (block->succ_empty())
       return;
+
     // Single successor: just pass this block's exit value as the
     // successor's entry value
     if (!block->getTerminator()) {
       ((*block2Ctx)[succ[0]])->pred2Abs[block] = abst;
       return;
     }
+
     // Two successors: first for 'then', second for 'else'
     ap_abstract1_t *absThen = NULL, *absElse = NULL;
+
     const clang::Stmt *cond = block->getTerminatorCondition();
     if (const clang::BinaryOperator *BO =
-	clang::dyn_cast<clang::BinaryOperator>(cond)) {
+        clang::dyn_cast<clang::BinaryOperator>(cond)) {
       if (!BO->isComparisonOp())
-	return;
+        return;
       clang::Expr *lhs = BO->getLHS()->IgnoreImpCasts();
        if (clang::DeclRefExpr *DR =
-	  clang::dyn_cast<clang::DeclRefExpr>(lhs)) {
-	const char *xp = DR->getDecl()->getNameAsString().c_str();
-	char x[strlen(xp) + 1];
-	strcpy(x, xp);
-	clang::Expr *rhs = BO->getRHS();
-	if (clang::IntegerLiteral *IL =
-	    clang::dyn_cast<clang::IntegerLiteral>(rhs)) {
-	  int c = (int)*IL->getValue().getRawData();
-	  switch (BO->getOpcode()) {
-	  case clang::BO_LT:
-	    *absThen = ApronHelper::meet_constraint_lt(&abst, x, c);
-	    *absElse = ApronHelper::meet_constraint_ge(&abst, x, c);
-	    break;
-	  case clang::BO_NE:
-	    *absThen = ApronHelper::meet_constraint_ne(&abst, x, c);
-	    *absElse = ApronHelper::meet_constraint_eq(&abst, x, c);
-	    break;
-	  default:
-	    break;
-	  }
-	}
+          clang::dyn_cast<clang::DeclRefExpr>(lhs)) {
+        const char *xp = DR->getDecl()->getNameAsString().c_str();
+        char x[strlen(xp) + 1];
+        strcpy(x, xp);
+        clang::Expr *rhs = BO->getRHS();
+        if (clang::IntegerLiteral *IL =
+            clang::dyn_cast<clang::IntegerLiteral>(rhs)) {
+          int c = (int)*IL->getValue().getRawData();
+          switch (BO->getOpcode()) {
+          case clang::BO_LT:
+            *absThen = ApronHelper::meet_constraint_lt(&abst, x, c);
+            *absElse = ApronHelper::meet_constraint_ge(&abst, x, c);
+            break;
+          case clang::BO_NE:
+            *absThen = ApronHelper::meet_constraint_ne(&abst, x, c);
+            *absElse = ApronHelper::meet_constraint_eq(&abst, x, c);
+            break;
+          default:
+            break;
+          }
+        }
       }
     }
+
     printf("Then branch:\n");
-    if(absThen != NULL) {
+    if (absThen) {
       ap_abstract1_fprint(stdout, man, absThen);
-     (*block2Ctx)[succ[0]]->pred2Abs[block] = *absThen;
-   }
+      (*block2Ctx)[succ[0]]->pred2Abs[block] = *absThen;
+    }
+
     printf("Else branch:\n");
-    if(absElse != NULL) {
+    if (absElse) {
       ap_abstract1_fprint(stdout, man, absElse);
       (*block2Ctx)[succ[1]]->pred2Abs[block] = *absElse;
-     }
-   }
+    }
+  }
 
     void assignExpr(char* var, std::vector<std::string> *exprItems,
-		    std::vector<int> *coeffs) {
+                    std::vector<int> *coeffs) {
       abst = ApronHelper::assignExpr(abst, var, exprItems, coeffs);
     }
 
@@ -472,7 +497,7 @@ struct Array {
   int size;
 
   Array(char *v, int s) {
-    strcpy(name, v);
+    strncpy(name, v, sizeof(name) - 1);
     size = s;
   }
 
@@ -506,18 +531,21 @@ public:
     // find array name and size
     std::string arr = variables.getLastVar();
     int size = 0;
-    for(unsigned int i = 0; i < arrays.size(); ++i) {
-      if(strcmp(arr.c_str(), arrays[i].getName()) == 0) {
-	size = arrays[i].getSize();
-	break;
+    for (unsigned int i = 0; i < arrays.size(); ++i) {
+      if (!strcmp(arr.c_str(), arrays[i].getName())) {
+        size = arrays[i].getSize();
+        break;
       }
     }
-    if(clang::IntegerLiteral *IL = clang::dyn_cast<clang::IntegerLiteral>(ind)) {
+    if (clang::IntegerLiteral *IL =
+            clang::dyn_cast<clang::IntegerLiteral>(ind)) {
       int val = (int)*IL->getValue().getRawData();
-      if((val < 0) || ((size > 0) && (val >= size))) {
-	printf("ERROR: invalid access to array %s. Index is out of bounds\n", arr.c_str());
+      if ((val < 0) || ((size > 0) && (val >= size))) {
+        printf("ERROR: invalid access to array %s. Index is out of bounds\n",
+                arr.c_str());
       }
-    } else if(clang::ImplicitCastExpr *CE = clang::dyn_cast<clang::ImplicitCastExpr>(ind)) {
+    } else if (clang::ImplicitCastExpr *CE =
+            clang::dyn_cast<clang::ImplicitCastExpr>(ind)) {
       Visit(CE);
       char *indVar = const_cast<char *>(variables.getLastVar().c_str());
       analysisCtx->addArrayIndex(indVar, size);
@@ -542,79 +570,87 @@ public:
             clang::Expr *lhs = BO->getLHS();
             if (clang::DeclRefExpr *DR =
                     clang::dyn_cast<clang::DeclRefExpr>(lhs)) {
-	  	const char *varp = DR->getDecl()->getNameAsString().c_str();
+                const char *varp = DR->getDecl()->getNameAsString().c_str();
                 char var[strlen(varp) + 1];
                 strcpy(var, varp);
                 clang::Expr *rhs = BO->getRHS();
-   	        variables.toggleCollectingVars(true);	
+                variables.toggleCollectingVars(true);        
                 if (clang::IntegerLiteral *IL =
                         clang::dyn_cast<clang::IntegerLiteral>(rhs)) {
                     int val = (int)*IL->getValue().getRawData();
-		    switch(opcode) {
-		    case clang::BO_Assign: 
-                      analysisCtx->assignConst(var, val);
-		      break;
-		    case clang::BO_MulAssign:
-		      analysisCtx->mulConst(var, val);
-		      break;
-		    case clang::BO_DivAssign:
-		      analysisCtx->divConst(var, val);
-		      break;
-		    case clang::BO_AddAssign:
-		      analysisCtx->addConst(var, val);
-		      break;
-		    case clang::BO_SubAssign:
-		      analysisCtx->subConst(var, val);
-		      break;
-		    default:
-		      /* skip */
-		      break;
-		    }
-		} else if(clang::DeclRefExpr *DRE = clang::dyn_cast<clang::DeclRefExpr>(rhs)) {
-		    Visit(DRE);
-		} else if(clang::ImplicitCastExpr *CE = clang::dyn_cast<clang::ImplicitCastExpr>(rhs)) {
- 	            Visit(CE);
-                } else if(clang::BinaryOperator *BO2 = clang::dyn_cast<clang::BinaryOperator>(rhs)) {
- 	            Visit(BO2);	
+                    switch(opcode) {
+                    case clang::BO_Assign: 
+                              analysisCtx->assignConst(var, val);
+                      break;
+                    case clang::BO_MulAssign:
+                      analysisCtx->mulConst(var, val);
+                      break;
+                    case clang::BO_DivAssign:
+                      analysisCtx->divConst(var, val);
+                      break;
+                    case clang::BO_AddAssign:
+                      analysisCtx->addConst(var, val);
+                      break;
+                    case clang::BO_SubAssign:
+                      analysisCtx->subConst(var, val);
+                      break;
+                    default:
+                      /* skip */
+                      break;
+                    }
+                } else if (clang::DeclRefExpr *DRE =
+                        clang::dyn_cast<clang::DeclRefExpr>(rhs)) {
+                    Visit(DRE);
+                } else if (clang::ImplicitCastExpr *CE =
+                        clang::dyn_cast<clang::ImplicitCastExpr>(rhs)) {
+                    Visit(CE);
+                } else if (clang::BinaryOperator *BO2 =
+                        clang::dyn_cast<clang::BinaryOperator>(rhs)) {
+                    Visit(BO2);        
                 }
 
-  	        std::vector<std::string> used = variables.getUsedVars();
-  	        std::vector<int> coeffs = variables.getVarCoeffs();
-		
-		if(used.size() > 0) {
-		  analysisCtx->assignExpr(var, &used, &coeffs);
-	        }
-	        variables.toggleCollectingVars(false);
-	    }  else if(clang::ArraySubscriptExpr *AS = clang::dyn_cast<clang::ArraySubscriptExpr>(lhs)) {
+                std::vector<std::string> used = variables.getUsedVars();
+                std::vector<int> coeffs = variables.getVarCoeffs();
+                
+                if (used.size() > 0) {
+                  analysisCtx->assignExpr(var, &used, &coeffs);
+                }
+                variables.toggleCollectingVars(false);
+            } else if (clang::ArraySubscriptExpr *AS =
+                    clang::dyn_cast<clang::ArraySubscriptExpr>(lhs)) {
                  Visit(AS);
-	    }
-      } else {
-	  // collect variables and coeffs of expr
-	  clang::ImplicitCastExpr *CE1 = clang::dyn_cast<clang::ImplicitCastExpr>(BO->getLHS());
-	  clang::ImplicitCastExpr *CE2 = clang::dyn_cast<clang::ImplicitCastExpr>(BO->getRHS());
-	  clang::IntegerLiteral *IL1 = clang::dyn_cast<clang::IntegerLiteral>(BO->getLHS());
-	  clang::IntegerLiteral *IL2 = clang::dyn_cast<clang::IntegerLiteral>(BO->getLHS());
-	  
-	  if(CE1) {
-	    Visit(CE1);
-	    if(IL2) {
-              int val = (int)*IL2->getValue().getRawData();
- 	      variables.addVarCoeff(val);
-	    } else {
-	      variables.addVarCoeff(1);
-	    }	
-          }	      
-          if(CE2) {
-	    Visit(CE2);
-	    if(IL1) {
-              int val = (int)*IL1->getValue().getRawData();
-	      if(opcode == clang::BO_Mul || opcode == clang::BO_Div) {
- 	        variables.addVarCoeff(val);
-              } else {
-	        variables.addVarCoeff(1);
-	      }
             }
-          }	
+      } else {
+          // collect variables and coeffs of expr
+          clang::ImplicitCastExpr *CEL =
+              clang::dyn_cast<clang::ImplicitCastExpr>(BO->getLHS());
+          clang::ImplicitCastExpr *CER =
+              clang::dyn_cast<clang::ImplicitCastExpr>(BO->getRHS());
+          clang::IntegerLiteral *ILL =
+              clang::dyn_cast<clang::IntegerLiteral>(BO->getLHS());
+          clang::IntegerLiteral *ILR =
+              clang::dyn_cast<clang::IntegerLiteral>(BO->getLHS());
+          
+          if (CEL) {
+            Visit(CEL);
+            if (ILR) {
+              int val = (int)*ILR->getValue().getRawData();
+              variables.addVarCoeff(val);
+            } else {
+              variables.addVarCoeff(1);
+            }        
+          }              
+          if (CER) {
+            Visit(CER);
+            if (ILL) {
+              int val = (int)*ILL->getValue().getRawData();
+              if (opcode == clang::BO_Mul || opcode == clang::BO_Div) {
+                variables.addVarCoeff(val);
+              } else {
+                variables.addVarCoeff(1);
+              }
+            }
+          }        
       }
     }
 
@@ -626,20 +662,22 @@ public:
                 const char *varp = DR->getDecl()->getNameAsString().c_str();
                 char var[strlen(varp) + 1];
                 strcpy(var, varp);
-		if(UO->isIncrementOp()) { 
+                if (UO->isIncrementOp()) { 
                     analysisCtx->increment(var);
                 } else {
-		    analysisCtx->deccrement(var);
-        	}
+                    analysisCtx->deccrement(var);
+                }
             }
         }
     }
  
     void VisitImplicitCastExpr(clang::ImplicitCastExpr *IC) {
-      if(clang::DeclRefExpr *DR = clang::dyn_cast<clang::DeclRefExpr>(IC->getSubExpr())) {
- 	 Visit(DR);
-      } else if(clang::ImplicitCastExpr *CE = clang::dyn_cast<clang::ImplicitCastExpr>(IC->getSubExpr())) {
- 	 Visit(CE);
+      if (clang::DeclRefExpr *DR = 
+              clang::dyn_cast<clang::DeclRefExpr>(IC->getSubExpr())) {
+         Visit(DR);
+      } else if (clang::ImplicitCastExpr *CE =
+              clang::dyn_cast<clang::ImplicitCastExpr>(IC->getSubExpr())) {
+         Visit(CE);
       }
     }
    
@@ -649,33 +687,37 @@ public:
           const char *varp = VD->getNameAsString().c_str();
           char var[strlen(varp) + 1];
           strcpy(var, varp);
-	  clang::QualType ty = VD->getType();
-	  if(ty->isArrayType()) {
-	    const clang::ArrayType *at = ty->getAsArrayTypeUnsafe();
-	    if(const clang::ConstantArrayType *cat = clang::dyn_cast<const clang::ConstantArrayType>(at)) {
-	      const unsigned long *size = cat->getSize().getRawData();
-	      arrays.push_back(Array(var, *size));
-	    }
-	  }
-	  if(VD->hasInit()) {
+
+          clang::QualType ty = VD->getType();
+          if (ty->isArrayType()) {
+            const clang::ArrayType *at = ty->getAsArrayTypeUnsafe();
+            if (const clang::ConstantArrayType *cat = 
+                    clang::dyn_cast<const clang::ConstantArrayType>(at)) {
+              const unsigned long size = *cat->getSize().getRawData();
+              arrays.push_back(Array(var, size));
+            }
+          }
+
+          if (VD->hasInit()) {
             clang::Expr *init = VD->getInit();
-	    if(clang::IntegerLiteral *IL =
-	      clang::dyn_cast<clang::IntegerLiteral>(init)) {
-              int val = (int)*IL->getValue().getRawData();
-              analysisCtx->assignConst(var, val);
-	    } else if(clang::ImplicitCastExpr *CE = clang::dyn_cast<clang::ImplicitCastExpr>(init)) {
-	      Visit(CE);
-    	    } else {
-	      variables.toggleCollectingVars(true);
+            if (clang::IntegerLiteral *IL =
+                    clang::dyn_cast<clang::IntegerLiteral>(init)) {
+                  int val = (int)*IL->getValue().getRawData();
+                  analysisCtx->assignConst(var, val);
+            } else if (clang::ImplicitCastExpr *CE =
+                    clang::dyn_cast<clang::ImplicitCastExpr>(init)) {
+              Visit(CE);
+            } else {
+              variables.toggleCollectingVars(true);
               Visit(init);
-	      std::vector<std::string> used = variables.getUsedVars();
-	      std::vector<int> coeffs = variables.getVarCoeffs();
-	      if(used.size() > 0) {
-		analysisCtx->assignExpr(var, &used, &coeffs);
-	      }
-	      variables.toggleCollectingVars(false);
-	    }
-	 }
+              std::vector<std::string> used = variables.getUsedVars();
+              std::vector<int> coeffs = variables.getVarCoeffs();
+              if (used.size() > 0) {
+                analysisCtx->assignExpr(var, &used, &coeffs);
+              }
+              variables.toggleCollectingVars(false);
+            }
+         }
        } 
      }
     }
@@ -684,7 +726,8 @@ public:
 
 class BlockAnalysis {
     // A container for BlockAnalysisContext objects
-    std::unordered_map<const clang::CFGBlock *, BlockAnalysisContext *> block2Ctx;
+    std::unordered_map<const clang::CFGBlock *, BlockAnalysisContext *>
+        block2Ctx;
 
 public:
     void add(const clang::CFGBlock *block) {
@@ -714,7 +757,7 @@ public:
     
         for (clang::CFGBlock::const_iterator I = block->begin(),
                 E = block->end(); I != E; ++I) {
-	  if (clang::Optional<clang::CFGStmt> cs = I->getAs<clang::CFGStmt>()) 
+          if (clang::Optional<clang::CFGStmt> cs = I->getAs<clang::CFGStmt>()) 
                 tf.Visit(const_cast<clang::Stmt*>(cs->getStmt()));
         }
     
@@ -841,8 +884,8 @@ public:
 
 class ExampleFrontendAction : public clang::ASTFrontendAction {
 public:
-    virtual std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(clang::CompilerInstance &CI,
-            clang::StringRef file) {
+    virtual std::unique_ptr<clang::ASTConsumer>
+        CreateASTConsumer(clang::CompilerInstance &CI, clang::StringRef file) {
         // pass CI pointer to ASTConsumer
         return llvm::make_unique<ExampleASTConsumer>(&CI);
     }

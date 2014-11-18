@@ -29,12 +29,12 @@ void test()
   
   //x -= 10;
 
-  /* int y = x; */
+  // int y = x; 
 
-  /* int z = 2 * x + y; */
+  // int z = 2 * x + y;
 
-  /* int a[2]; */
-  /* a[1] = 2; */
+  // int a[2]; 
+  // a[1] = 2;
 }
 
 int main(void)
