@@ -31,6 +31,8 @@ static const char *funcToAnalyze;
 static ap_manager_t* man;
 static ap_environment_t *env;
 
+typedef enum { EQUAL, NOT_EQUAL, GREATER_EQUAL, LESS, } compare_t;
+
 static char *strdup_e(const char *s) {
     char *dup = strdup(s);
     if (!dup) {
@@ -41,13 +43,30 @@ static char *strdup_e(const char *s) {
     return dup;
 }
 
-typedef enum { EQUAL, NOT_EQUAL, GREATER_EQUAL, LESS, } compare_t;
+static const char *toString(clang::Stmt *stmt) {
+    static char ret[64];
+    clang::LangOptions LangOpts;
+    LangOpts.C99 = true;
+    clang::PrintingPolicy Policy(LangOpts);
+    std::string TypeS;
+    llvm::raw_string_ostream s(TypeS);
+    stmt->printPretty(s, 0, Policy);
+    strcpy(ret, s.str().c_str());
+    ret[sizeof(ret) - 1] = '\0';
+
+    return (char *)ret;
+}
 
 class Variables {
-  clang::DeclContext *dc;
-  std::set<char *> numerics;
-  // Map array name to its size
-  std::map<char *, int> array2size;
+    clang::DeclContext *dc;
+    std::set<char *> numerics;
+    // Map array name to its size
+    struct cmp_str {
+        bool operator()(char const *a, char const *b) const {
+            return std::strcmp(a, b) < 0;
+        }
+    };
+    std::map<char *, int, cmp_str> array2size;
 
 public:
   // constructor is actually in init() since this is a singletone static class,
@@ -121,7 +140,7 @@ public:
               return *it;
       }
 
-      printf("Error: Variable %s not found in var list. Aborting", varName);
+      printf("Error: Variable %s not found in var list. Aborting\n", varName);
       exit(1);
   }
 
@@ -129,7 +148,14 @@ public:
       char *array = const_cast<char *>(array_const);
 
       if (array2size.find(array) == array2size.end()) {
-          printf("Error: Variable %s not found in var list. Aborting", array);
+          printf("Error: Array %s not found in array list. Aborting\n", array);
+          for (std::map<char *, int>::iterator it=array2size.begin();
+                  it != array2size.end(); ++it) {
+              if (char *key = it->first)
+                  printf("%s ", key);
+
+          }
+          printf("\n");
           exit(1);
       }
 
@@ -489,6 +515,7 @@ private:
 
 class TransferFunctions : public clang::StmtVisitor<TransferFunctions> {
     BlockApronContext *blkApronCtx;
+    bool error;
 
 public:
     TransferFunctions(BlockApronContext *blkApronCtx) {
@@ -498,9 +525,10 @@ public:
     void VisitArraySubscriptExpr(clang::ArraySubscriptExpr *AS) {
       // find array name and size
       clang::DeclRefExpr *DR;
-      if (!(DR = clang::dyn_cast<clang::DeclRefExpr>(AS->getBase()))) {
-          printf("Can't handle complex array expressions:\n");
-          DR->dump();
+      if (!(DR = clang::dyn_cast<clang::DeclRefExpr>(
+                      AS->getBase()->IgnoreImpCasts()))) {
+          printf("Can't handle complex array expressions:\n\t%s\n",
+                  toString(AS));
           exit(1);
       }
   
@@ -515,19 +543,22 @@ public:
           if (val < 0 || val >= size) {
               printf("** Index out of bounds error: Array %s, size %d, index "
                       "%d\n", arr, size, val);
+              printf("\t%s\n", toString(AS));
+              error = true;
           }
       // Size is a literal but the index is an abstract value:
       } else if (clang::DeclRefExpr *DR =
-              clang::dyn_cast<clang::DeclRefExpr>(ind)) {
+              clang::dyn_cast<clang::DeclRefExpr>(ind->IgnoreImpCasts())) {
           char *varInd = const_cast<char *>(
                   DR->getDecl()->getNameAsString().c_str());
           if (!blkApronCtx->isIndexInBound(varInd, size)) {
-              printf("** Index out of bounds error: Array %s, size %d\n",
-                    arr, size);
+              printf("** Index out of bounds error: Index %s, Array %s, size "
+                      "%d\n", toString(DR), arr, size);
+              error = true;
           }
       } else {
-          printf("Can't handle compound expressions as array indexes:\n");
-          ind->dump();
+          printf("Can't handle compound expressions as array indexes:\n\t%s\n",
+                  toString(AS));
           exit(1);
       }
 //      else if (clang::ImplicitCastExpr *CE =
@@ -545,14 +576,17 @@ public:
         if (!(opcode >= clang::BO_Assign && opcode <= clang::BO_SubAssign)) {
 //            printf("Can't handle compound operations:\n");
 //            BO->dump();
+            Visit(BO->getLHS());
+            Visit(BO->getRHS());
             return;
         }
   
         clang::Expr *lhs = BO->getLHS();
         clang::DeclRefExpr *DR = clang::dyn_cast<clang::DeclRefExpr>(lhs);
         if (!DR) {
-            printf("Can handle only assignment to non-compound variables:\n");
-            DR->dump();
+            printf("Can handle only assignment to non-compound variables:\n\t%s"
+                    "\n", toString(BO));
+            Visit(lhs);
             return;
         }
   
@@ -561,8 +595,9 @@ public:
         clang::Expr *rhs = BO->getRHS();
         clang::IntegerLiteral *IL = clang::dyn_cast<clang::IntegerLiteral>(rhs);
         if (!IL) {
-            printf("Can't handle a non-literal left hand side:\n");
-            rhs->dump();
+            printf("Can't handle a non-literal right hand side: \n\t%s %s\n",
+                    toString(rhs), rhs->getStmtClassName());
+            Visit(rhs);
             return;
         }
   
@@ -656,22 +691,21 @@ public:
         }
     }
 
-//    void VisitImplicitCastExpr(clang::ImplicitCastExpr *IC) {
-//      if (clang::DeclRefExpr *DR = 
-//              clang::dyn_cast<clang::DeclRefExpr>(IC->getSubExpr())) {
-//         Visit(DR);
-//      } else if (clang::ImplicitCastExpr *CE =
-//              clang::dyn_cast<clang::ImplicitCastExpr>(IC->getSubExpr())) {
-//         Visit(CE);
-//      }
-//    }
-//   
+    // XXX: ArraySubscriptExpr won't be visited without this. Why?
+    void VisitImplicitCastExpr(clang::ImplicitCastExpr *IC) {
+        Visit(IC->getSubExpr());
+    }
+   
+    bool foundError() {
+        return error;
+    }
 };
 
 class BlockAnalysis {
     // A container for BlockApronContext objects
     std::unordered_map<const clang::CFGBlock *, BlockApronContext *>
         block2Ctx;
+    bool error;
 
 public:
     void add(const clang::CFGBlock *block) {
@@ -695,7 +729,7 @@ public:
         if (!blkApronCtx->updateEntryValue())
             return false;
 
-        printf("%d changed\n", block->getBlockID());
+        printf("Some values changed\n");
         // Apply the transfer function.
         TransferFunctions tf(blkApronCtx);
     
@@ -703,6 +737,10 @@ public:
                 E = block->end(); I != E; ++I) {
           if (clang::Optional<clang::CFGStmt> cs = I->getAs<clang::CFGStmt>()) {
                 tf.Visit(const_cast<clang::Stmt*>(cs->getStmt()));
+                if (tf.foundError()) {
+                    error = true;
+                    break;
+                }
           }
         }
     
@@ -711,6 +749,10 @@ public:
         blkApronCtx->updateSuccessors();
     
         return true;
+    }
+
+    bool foundError() {
+        return error;
     }
 
     void print() {
@@ -765,6 +807,11 @@ static void analyze(clang::Decl *D) {
         // Did the block change?
         printf("\n[B%d]\n", block->getBlockID());
         bool changed = blockAnalysis.runOnBlock(block);
+        if (blockAnalysis.foundError()) {
+            printf("** Aborting: Found error in block %d **\n",
+                    block->getBlockID());
+            goto Error;
+        }
         
         if (changed) {
             printf("Enqueing: ");
@@ -777,6 +824,7 @@ static void analyze(clang::Decl *D) {
         }
     }
     printf("Fixed point reached\n");
+Error:
     blockAnalysis.print();
 }
 
