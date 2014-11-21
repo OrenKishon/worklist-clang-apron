@@ -6,9 +6,11 @@ void test()
   //int x = 1;
   //int y = 3;
   int x[3];
-  int xow = 3;
-  int ydd = 2;
-  if(xow != 2) {
+  int xow;
+  xow = 3;
+  int ydd;
+  ydd = 2;
+  if(xow != 3) {
     ydd = 3;
   }
   //int z = x[y];

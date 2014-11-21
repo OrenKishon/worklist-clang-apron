@@ -706,6 +706,8 @@ public:
           }
         }
     
+        printf("After transfer functions, Before update succ:\n");
+        blkApronCtx->print();
         blkApronCtx->updateSuccessors();
     
         return true;
