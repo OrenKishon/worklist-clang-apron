@@ -321,31 +321,6 @@ public:
     }
 #endif
 
-    // XXX: These all should be one function with switch..case
-    void increment(char *var) {
-        abst = assignVarPlusInt(var, var, 1);
-    }
-
-    void deccrement(char *var) {
-        abst = assignVarPlusInt(var, var, -1);
-    }
-
-    void addConst(char *var, int val) {
-        abst = assignVarPlusInt(var, var, val);
-    }
-
-    void subConst(char *var, int val) {
-        abst = assignVarPlusInt(var, var, -val);
-    }
-
-    void mulConst(char *var, int val) {
-        abst = assignVarMulInt(var, var, val);
-    }
-
-    void divConst(char *var, int val) {
-        abst = assignVarMulInt(var, var, 1/val);
-    }
-
     void print() {
         ap_abstract1_fprint(stdout, man, &abst);
     }
@@ -355,18 +330,30 @@ public:
             satisfies_constraint(indVar, LESS, size);
     }
 
-    /* var := c */
-    ap_abstract1_t assignConst(char *var, int c) {
+    /* x := c */
+    void assignConst(char *x, int c) {
         ap_linexpr1_t expr = ap_linexpr1_make(env, AP_LINEXPR_SPARSE, 1);
         ap_linexpr1_set_list(&expr,
                              AP_CST_S_INT, c,
                              AP_END);
     
-        abst = ap_abstract1_assign_linexpr(man, true, &abst, var, &expr, NULL);
+        abst = ap_abstract1_assign_linexpr(man, true, &abst, x, &expr, NULL);
         ap_linexpr1_clear(&expr);
-        return abst;
     }
 
+    /* x := a*y + c */ 
+    void assignLinearExpression(char *x, int a, char *y, int c) {
+      // ap_linexpr1_make() destroys contents of *var 
+        ap_linexpr1_t expr = ap_linexpr1_make(env, AP_LINEXPR_SPARSE, 1);
+        ap_linexpr1_set_list(&expr,
+                            AP_COEFF_S_INT, a, y,
+                            AP_CST_S_INT, c,
+                            AP_END);
+   
+        abst = ap_abstract1_assign_linexpr(man, true, &abst, x, &expr, NULL);
+        ap_linexpr1_clear(&expr);    
+    } 
+  
 private:
 #if 0
   /* var1 := expr */ 
@@ -391,23 +378,7 @@ private:
 
     return abst;
   }
-#endif
 
-  /* var1 := var2 */ 
-  ap_abstract1_t assignVar(char *var1, char *var2) {
-    // ap_linexpr1_make() destroys contents of *var 
-    ap_linexpr1_t expr = ap_linexpr1_make(env, AP_LINEXPR_SPARSE, 1);
-    ap_linexpr1_set_list(&expr,
-                        AP_COEFF_S_INT, 1, var2,
-                        AP_END);
- 
-    abst = ap_abstract1_assign_linexpr(man, true, &abst, var1, &expr, NULL);
-    ap_linexpr1_clear(&expr);    
-
-    return abst;
-  } 
-
-#if 0
   /* a[ind] */
   ap_abstract1_t addArrayIndexConst(char *indVar, int size) {
     ap_lincons1_array_t array = ap_lincons1_array_make(env, 2);
@@ -427,29 +398,6 @@ private:
     return abst;
   }
 #endif
-
-  // var := x + c
-  ap_abstract1_t assignVarPlusInt(char *var, char *x, int c) {
-    ap_linexpr1_t expr = ap_linexpr1_make(env, AP_LINEXPR_SPARSE, 0);
-    ap_linexpr1_set_list(&expr,
-                         AP_COEFF_S_INT, 1, x,
-                         AP_CST_S_INT, c,
-                         AP_END);
-    abst = ap_abstract1_assign_linexpr(man, true, &abst, var, &expr, NULL);
-    ap_linexpr1_clear(&expr);
-    return abst;
-  }
-
-  // var := x * c
-  ap_abstract1_t assignVarMulInt(char *var, char *x, int c) {
-    ap_linexpr1_t expr = ap_linexpr1_make(env, AP_LINEXPR_SPARSE, 0);
-    ap_linexpr1_set_list(&expr,
-                         AP_COEFF_S_INT, c, x,
-                         AP_END);
-    abst = ap_abstract1_assign_linexpr(man, true, &abst, var, &expr, NULL);
-    ap_linexpr1_clear(&expr);
-    return abst;
-  }
 
   bool satisfies_constraint(char *var, compare_t op, int c) {
       ap_lincons1_t cons = create_constraint(var, op, c);
@@ -571,7 +519,7 @@ public:
     }
 
     void VisitBinaryOperator(clang::BinaryOperator *BO) {
-        // handle all binary operations, including compound assignments (+= etc)
+        // handle all arithmetic assignments including compound ('+=', etc)
         clang::BinaryOperator::Opcode opcode = BO->getOpcode();
         if (!(opcode >= clang::BO_Assign && opcode <= clang::BO_SubAssign)) {
 //            printf("Can't handle compound operations:\n");
@@ -582,46 +530,67 @@ public:
         }
   
         clang::Expr *lhs = BO->getLHS();
-        clang::DeclRefExpr *DR = clang::dyn_cast<clang::DeclRefExpr>(lhs);
-        if (!DR) {
+        clang::DeclRefExpr *DRleft = clang::dyn_cast<clang::DeclRefExpr>(lhs);
+        if (!DRleft) {
             printf("Can handle only assignment to non-compound variables:\n\t%s"
                     "\n", toString(BO));
             Visit(lhs);
             return;
         }
   
-        char *var = variables.find(DR->getDecl()->getNameAsString().c_str());
+        char *x = variables.find(DRleft->getDecl()->getNameAsString().c_str());
   
         clang::Expr *rhs = BO->getRHS();
-        clang::IntegerLiteral *IL = clang::dyn_cast<clang::IntegerLiteral>(rhs);
-        if (!IL) {
-            printf("Can't handle a non-literal right hand side: \n\t%s %s\n",
-                    toString(rhs), rhs->getStmtClassName());
+        // RHS is a literal: x=c, x+=c, x-=c, ...
+        if (clang::IntegerLiteral *IL =
+                clang::dyn_cast<clang::IntegerLiteral>(rhs)) {
+            int c = (int)*IL->getValue().getRawData();
+            switch(opcode) {
+            case clang::BO_Assign: 
+                blkApronCtx->assignConst(x, c);
+                break;
+            case clang::BO_MulAssign:
+                // x := c*x + 0
+                blkApronCtx->assignLinearExpression(x, c, x, 0);
+                break;
+                // x := (1/c)*x + 0
+            case clang::BO_DivAssign:
+                blkApronCtx->assignLinearExpression(x, 1/c, x, 0);
+                break;
+            case clang::BO_AddAssign:
+                // x := 1*x + c
+                blkApronCtx->assignLinearExpression(x, 1, x, c);
+                break;
+            case clang::BO_SubAssign:
+                // x := -1*x + c
+                blkApronCtx->assignLinearExpression(x, -1, x, c);
+                break;
+            default:
+                printf("Can't handle operation %d\n", opcode);
+                exit(1);
+            }
+            // RHS is a variable: x=y
+        } else if (clang::DeclRefExpr *DRright =
+                clang::dyn_cast<clang::DeclRefExpr>(rhs)) {
+            char *y = variables.find(
+                    DRright->getDecl()->getNameAsString().c_str());
+            switch(opcode) {
+            case clang::BO_Assign: 
+                // x := 1*y + 0
+                blkApronCtx->assignLinearExpression(x, 1, y, 0);
+                break;
+                // XXX: Hnadle all the cases...
+            default:
+                printf("Can't handle compound assignment operator \n\t%s\n",
+                       toString(BO));
+                exit(1);
+            }
+            // Can't handle more than one expression in RHS
+        } else {
+            printf("Can't assign a compound right hand side: \n\t%s\n",
+                    toString(rhs));
             Visit(rhs);
             return;
-        }
-  
-        int val = (int)*IL->getValue().getRawData();
-        switch(opcode) {
-        case clang::BO_Assign: 
-            blkApronCtx->assignConst(var, val);
-            break;
-        case clang::BO_MulAssign:
-          blkApronCtx->mulConst(var, val);
-          break;
-        case clang::BO_DivAssign:
-          blkApronCtx->divConst(var, val);
-          break;
-        case clang::BO_AddAssign:
-          blkApronCtx->addConst(var, val);
-          break;
-        case clang::BO_SubAssign:
-          blkApronCtx->subConst(var, val);
-          break;
-        default:
-          printf("Can't handle operation %d\n", opcode);
-          exit(1);
-          break;
         }
     }
 //      } else if (clang::DeclRefExpr *DRE =
@@ -680,13 +649,14 @@ public:
             clang::Expr *sub = UO->getSubExpr();
             if (clang::DeclRefExpr *DR = 
                 clang::dyn_cast<clang::DeclRefExpr>(sub)) {
-                char *var = variables.find(
+                char *x = variables.find(
                         DR->getDecl()->getNameAsString().c_str());
-                if (UO->isIncrementOp()) { 
-                    blkApronCtx->increment(var);
-                } else {
-                    blkApronCtx->deccrement(var);
-                }
+                if (UO->isIncrementOp())
+                    // x := 1*x + 1
+                    blkApronCtx->assignLinearExpression(x, 1, x, 1);
+                else
+                    // x := 1*x + -1
+                    blkApronCtx->assignLinearExpression(x, 1, x, -1);
             }
         }
     }
