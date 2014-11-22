@@ -75,6 +75,18 @@ public:
   }
 
   void init(clang::Decl *D) {
+    clang::FunctionDecl *FD = clang::dyn_cast<clang::FunctionDecl>(D);
+    for (clang::FunctionDecl::param_iterator P = FD->param_begin();
+            P != FD->param_end(); ++P) {
+        clang::ParmVarDecl *Parm = *P;
+        const char *varName = Parm->getNameAsString().c_str();
+        clang::QualType ty = Parm->getType();
+        if (ty->isScalarType()) {
+            numerics.insert(strdup_e(varName));
+            printf("Tracking numeric variable %s\n", varName);
+        }
+    }
+    
     dc = clang::cast<clang::DeclContext>(D);
 
     for (clang::DeclContext::specific_decl_iterator<clang::VarDecl>
@@ -280,25 +292,34 @@ public:
         }
   
         char *x = variables.find(DR->getDecl()->getNameAsString().c_str());
-  
-        clang::Expr *rhs = BO->getRHS();
-        clang::IntegerLiteral *IL = clang::dyn_cast<clang::IntegerLiteral>(rhs);
-        if (!IL) {
-            printf("Right side of condition must be an integer litaral\n");
-            exit(1);
-        }
-        int c = (int)*IL->getValue().getRawData();
-  
+        char *y = NULL;
+        int c = 0;
         // Two successors: first for 'then', second for 'else'
         ap_abstract1_t absThen, absElse;
+  
+        clang::Expr *rhs = BO->getRHS();
+        // RHS is a literal: x < c, x != c, etc
+        if (clang::IntegerLiteral *IL =
+                clang::dyn_cast<clang::IntegerLiteral>(rhs)) {
+            c = (int)*IL->getValue().getRawData();
+        // RHS is a variable: x < y, x != y, etc
+        } else if (clang::DeclRefExpr *DRright =
+                clang::dyn_cast<clang::DeclRefExpr>(rhs->IgnoreImpCasts())) {
+            y = variables.find(DRright->getDecl()->getNameAsString().c_str());
+        } else {
+            printf("Can't analyze a compound right hand side: \n\t%s (%s)\n",
+                    toString(rhs), rhs->getStmtClassName());
+            exit(1);
+        }
+  
         switch (BO->getOpcode()) {
         case clang::BO_LT:
-          absThen = meet_constraint(x, LESS, c);
-          absElse = meet_constraint(x, GREATER_EQUAL, c);
+          absThen = meet_constraint(x, LESS, y, c);
+          absElse = meet_constraint(x, GREATER_EQUAL, y, c);
           break;
         case clang::BO_NE:
-          absThen = meet_constraint(x, NOT_EQUAL, c);
-          absElse = meet_constraint(x, EQUAL, c);
+          absThen = meet_constraint(x, NOT_EQUAL, y, c);
+          absElse = meet_constraint(x, EQUAL, y, c);
           break;
         default:
           printf("Can only handle ops: <, !=\n");
@@ -399,66 +420,75 @@ private:
   }
 #endif
 
-  bool satisfies_constraint(char *var, compare_t op, int c) {
-      ap_lincons1_t cons = create_constraint(var, op, c);
-      return ap_abstract1_sat_lincons(man, &abst, &cons);
-  }
+    bool satisfies_constraint(char *var, compare_t op, int c) {
+        ap_lincons1_t cons = create_linexp_constraint(var, op, NULL, c);
+        return ap_abstract1_sat_lincons(man, &abst, &cons);
+    }
 
-  ap_abstract1_t meet_constraint(char *var, compare_t op, int c) {
-      ap_lincons1_t cons;
-      ap_abstract1_t a, b;
-
-      switch(op) {
-      case EQUAL:
-      case GREATER_EQUAL:
-      case LESS:
-          cons = create_constraint(var, op, c);
-          break;
-      case NOT_EQUAL:
-          // Instead of using '!=' we do: join(meet(ABS, x<c), meet(ABS, x>c)).
-          // If (x=[c, c]) then the result will be bottom.
-          a = meet_constraint(var, LESS, c);
-          b = meet_constraint(var, GREATER_EQUAL, c + 1);
-          return ap_abstract1_join(man, false, &a, &b);
-      default:
-          exit(1);
-      }
-
-      ap_lincons1_array_t array = ap_lincons1_array_make(env, 1);
-      ap_lincons1_array_set(&array, 0, &cons);
-      ap_abstract1_t temp = ap_abstract1_of_lincons_array(man, env, &array);
-      ap_lincons1_array_clear(&array);
-      ap_abstract1_t res = ap_abstract1_meet(man, false, &abst, &temp);
+    ap_abstract1_t meet_constraint(char *var, compare_t op, char *y, int c) {
+        ap_lincons1_t cons;
+        ap_abstract1_t a, b;
   
-      return res;
-  }
+        switch(op) {
+        case EQUAL:
+        case GREATER_EQUAL:
+        case LESS:
+            cons = create_linexp_constraint(var, op, y, c);
+            break;
+        case NOT_EQUAL:
+            // Instead of using != we do: join(meet(ABS, x<c), meet(ABS, x>c)).
+            // If (x=[c, c]) then the result will be bottom.
+            a = meet_constraint(var, LESS, y, c);
+            b = meet_constraint(var, GREATER_EQUAL, y, c + 1);
+            return ap_abstract1_join(man, false, &a, &b);
+        default:
+            exit(1);
+        }
+  
+        ap_lincons1_array_t array = ap_lincons1_array_make(env, 1);
+        ap_lincons1_array_set(&array, 0, &cons);
+        ap_abstract1_t temp = ap_abstract1_of_lincons_array(man, env, &array);
+        ap_lincons1_array_clear(&array);
+  
+        return ap_abstract1_meet(man, false, &abst, &temp);
+    }
 
-  ap_lincons1_t create_constraint(char *x, compare_t op, int c) {
-      typedef struct {
-          int var_coeff;
-          int scalar_sign;
-          ap_constyp_t constyp;
-      } constraint_param_t;
+    ap_lincons1_t create_linexp_constraint(char *x, compare_t op, char *y,
+            int c) {
+        typedef struct {
+            int x_sign;
+            int rhs_sign;
+            ap_constyp_t constyp;
+        } constraint_param_t;
 
-      static std::map<compare_t, constraint_param_t> op2params = {
-          // constraint x = c (x - c = 0)
-          { EQUAL,              { 1, -1, AP_CONS_EQ } },
-          // constraint x >= c (x - c >= 0)
-          { GREATER_EQUAL,   { 1, -1, AP_CONS_SUPEQ } },
-          // constraint x < c (-1*x + c > 0)
-          { LESS,               { -1, 1, AP_CONS_SUP } },
-      };
+        static std::map<compare_t, constraint_param_t> op2params = {
+            // constraint x = E (x - E = 0)
+            { EQUAL,              { 1, -1, AP_CONS_EQ } },
+            // constraint x >= E (x - E >= 0)
+            { GREATER_EQUAL,   { 1, -1, AP_CONS_SUPEQ } },
+            // constraint x < E (-1*x + E > 0)
+            { LESS,               { -1, 1, AP_CONS_SUP } },
+        };
 
-      constraint_param_t p = op2params[op];
+        constraint_param_t p = op2params[op];
 
-      ap_linexpr1_t expr = ap_linexpr1_make(env, AP_LINEXPR_SPARSE, 0);
-      ap_lincons1_t cons = ap_lincons1_make(p.constyp, &expr, NULL);
-      ap_lincons1_set_list(&cons,
-                           AP_COEFF_S_INT, p.var_coeff, x,
-                           AP_CST_S_INT, p.scalar_sign * c,
-                           AP_END);
-      return cons;
-  }
+        ap_linexpr1_t expr = ap_linexpr1_make(env, AP_LINEXPR_SPARSE, 0);
+        ap_lincons1_t cons = ap_lincons1_make(p.constyp, &expr, NULL);
+        if (y) {
+            ap_lincons1_set_list(&cons,
+                    AP_COEFF_S_INT, p.x_sign, x,
+                    AP_COEFF_S_INT, p.rhs_sign, y,
+                    AP_CST_S_INT, p.rhs_sign * c,
+                    AP_END);
+        } else {
+            ap_lincons1_set_list(&cons,
+                    AP_COEFF_S_INT, p.x_sign, x,
+                    AP_CST_S_INT, p.rhs_sign * c,
+                    AP_END);
+        }
+
+        return cons;
+    }
 };
 
 class TransferFunctions : public clang::StmtVisitor<TransferFunctions> {
@@ -571,7 +601,7 @@ public:
             }
             // RHS is a variable: x=y
         } else if (clang::DeclRefExpr *DRright =
-                clang::dyn_cast<clang::DeclRefExpr>(rhs)) {
+                clang::dyn_cast<clang::DeclRefExpr>(rhs->IgnoreImpCasts())) {
             char *y = variables.find(
                     DRright->getDecl()->getNameAsString().c_str());
             switch(opcode) {
@@ -587,8 +617,8 @@ public:
             }
             // Can't handle more than one expression in RHS
         } else {
-            printf("Can't assign a compound right hand side: \n\t%s\n",
-                    toString(rhs));
+            printf("Can't assign a compound right hand side: \n\t%s (%s)\n",
+                    toString(rhs), rhs->getStmtClassName());
             Visit(rhs);
             return;
         }

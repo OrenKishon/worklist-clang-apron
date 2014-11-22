@@ -10,6 +10,8 @@ void test()
   xow = 3;
   int ydd;
   ydd = 2;
+  int z;
+  z = ydd;
   if(xow != 3) {
     ydd = 3;
   }
