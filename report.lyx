@@ -88,9 +88,10 @@ n.
 \end_layout
 
 \begin_layout Standard
-The analysis tool takes as input a C function and anlyzes it using a fixed
+The analysis tool takes as input a C function and anlayzes it using a fixed
  point iteration algorithm on the blocks of its control flow graph.
- The analysis is done by abstracting variables value to the interval domain.
+ The analysis is done by abstracting variables' values to the intervals
+ domain.
  Propagation through the blocks is done by Join and Meet operations on the
  abstract values.
 \end_layout
@@ -120,7 +121,7 @@ key "key-1"
  It does not, however, has the feature of fixed-point iteration analysis
  based on abstract values, and this is a needed feature we have found requests
  for over the internet.
- Clang does have the feature of analysis based on symbolic execution (reffered
+ Clang does have the feature of analysis based on symbolic execution (referred
  to as 
 \begin_inset Quotes eld
 \end_inset
@@ -142,7 +143,7 @@ key "key-2"
 \end_inset
 
 : A software library for numerical analysis in abstract interpretation.
- Used for transforming variable values to the interval domains and applying
+ Used for transforming variable values to the intervals domain and applying
  linear expression constraints on them and the operations join and meet.
 \end_layout
 
@@ -242,11 +243,11 @@ The blocks of the CFG are iterated in a worklist algorithm (referred to
  The implementation can bee seen in figure 4.
  It is very simple: At the beginning all of the blocks are in the queue
  (with all abstract values initialized to bottom).
- Popped blocks are processed by the transfer functions.
+ Popped out blocks are processed by the transfer functions.
  If their values have changed, then their successors in the CFG are re-queued
  in the queue.
  This goes on until no more changes occure.
- If an error has been found, in out case - an put-of-bound index error,
+ If an error has been found, in our case - an put-of-bound index error,
  the iteration is aborted.
 \end_layout
 
@@ -348,7 +349,7 @@ Apron context
  a join on all of this list's members.
  In the same way, the block will update its successors' entry values when
  it finishes each run, according to the condition in its termination statement.
- To sum up the algorithm of a songle run on a block:
+ To sum up the algorithm of a single run on a block:
 \end_layout
 
 \begin_layout Enumerate
@@ -500,8 +501,16 @@ else
 
 , see figure 8) and each of these values is updated in its matching successor
  block's entry values list.
- The assume transdormation is actually a meet operation with the corresponding
- constraint of the branch.
+ The 
+\begin_inset Quotes eld
+\end_inset
+
+assume
+\begin_inset Quotes erd
+\end_inset
+
+ transformation is actually a meet operation with the corresponding constraint
+ of the branch.
  The implementation of these transformers in Apron is by creating a constraint
  and applying a meet operation between the abstract value and the constraint.
  See figure 9 for the implementation, including the special case of the
@@ -635,7 +644,7 @@ When applying the transfer functions on assignments, the analysis tool also
  checks whether an array subscript expression (For example: A[i]) could
  be using an index with a value out of bounds of the array allowed indexes
  (below 0 or more than the size).
- In this case, the potentail error is reported to output and the tool aborts.
+ In this case, the potential error is reported to output and the tool aborts.
  As far as our implementation goes, this check can be performed on arrays
  with constant size (for example, declared as 
 \begin_inset Quotes eld
@@ -645,7 +654,7 @@ int A[32]
 \begin_inset Quotes erd
 \end_inset
 
-) but with the check index being an abstract value.
+) but with the checked index being an abstract value.
  Extending it to dynamic array sizes is a matter of further development
  over the Clang AST code.
  The implementation in Apron of the check of the abstract index is similiar
@@ -683,10 +692,6 @@ Figure 10 shows the result output of the loop_example() function described
 wide false
 sideways false
 status open
-
-\begin_layout Plain Layout
-
-\end_layout
 
 \begin_layout Plain Layout
 \begin_inset Caption
@@ -770,6 +775,91 @@ Array test function: Code, CFG and analysis output
 \end_inset
 
 
+\end_layout
+
+\begin_layout Section*
+Summary
+\end_layout
+
+\begin_layout Standard
+In this project we have implemented a chaotic iteration algorithm and static
+ analysis using abstract interpretation as we learned them in the course.
+ We have invested much in implementing these algorithms for analyzing C
+ programs by the use of 
+\begin_inset Quotes eld
+\end_inset
+
+melting
+\begin_inset Quotes erd
+\end_inset
+
+ together the Clang and Apron libraries.
+ On top of this implementation we have showed an implementation of index-out-of-
+bound error checking.
+ We have intended to create a much more sophisticated array index analyzer
+ but we have discovered that the implementation of the infrastructure for
+ the analysis itself is a very hard task on its own (The tool has almost
+ 1000 lines of code, completely new).
+ But it is also apperent that once this infrastructure works, creating anlyzers
+ on top of it is much more easy.
+\end_layout
+
+\begin_layout Section*
+Appendix - Running the tool
+\end_layout
+
+\begin_layout Itemize
+The compilation instructions are in 
+\begin_inset Quotes eld
+\end_inset
+
+README.md
+\begin_inset Quotes erd
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+The compilation is by running the script ./build.sh
+\end_layout
+
+\begin_layout Itemize
+The execution is by running: 
+\begin_inset Quotes eld
+\end_inset
+
+./worklist <C file> <CFG creation param> <function name>
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+C file: the name of the input C file
+\end_layout
+
+\begin_layout Itemize
+CFG creation param: 0 for no CFG output, 1 for textual CFG putput to standart
+ output and 2 for graphical CFG dot file.
+ For this, the program graphviz must be installed in the system.
+\end_layout
+
+\begin_layout Itemize
+functin name: The function inside the file being analyzed.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Execution example:
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+./worklist test_array.c 0 test
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Notice that some input example programs are included with the source code.
 \end_layout
 
 \begin_layout Bibliography
