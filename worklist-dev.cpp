@@ -82,8 +82,9 @@ public:
         const char *varName = Parm->getNameAsString().c_str();
         clang::QualType ty = Parm->getType();
         if (ty->isScalarType()) {
-            numerics.insert(strdup_e(varName));
-            printf("Tracking numeric variable %s\n", varName);
+            char *s = strdup_e(varName);
+            numerics.insert(s);
+            printf("Tracking numeric paramater variable %s\n", s);
         }
     }
     
@@ -99,8 +100,9 @@ public:
         const char *varName = vd->getNameAsString().c_str();
         clang::QualType ty = vd->getType();
         if (ty->isScalarType()) {
-            numerics.insert(strdup_e(varName));
-            printf("Tracking numeric variable %s\n", varName);
+            char *name = strdup_e(varName);
+            numerics.insert(name);
+            printf("Tracking numeric variable %s\n", name);
         } else if (ty->isArrayType()) {
             const clang::ArrayType *at = ty->getAsArrayTypeUnsafe();
             const clang::ConstantArrayType *cat;
@@ -498,6 +500,7 @@ class TransferFunctions : public clang::StmtVisitor<TransferFunctions> {
 public:
     TransferFunctions(BlockApronContext *blkApronCtx) {
         this->blkApronCtx = blkApronCtx;
+        this->error = false;
     }
 
     void VisitArraySubscriptExpr(clang::ArraySubscriptExpr *AS) {
@@ -527,7 +530,7 @@ public:
       // Size is a literal but the index is an abstract value:
       } else if (clang::DeclRefExpr *DR =
               clang::dyn_cast<clang::DeclRefExpr>(ind->IgnoreImpCasts())) {
-          char *varInd = const_cast<char *>(
+          char *varInd = variables.find(
                   DR->getDecl()->getNameAsString().c_str());
           if (!blkApronCtx->isIndexInBound(varInd, size)) {
               printf("** Index out of bounds error: Index %s, Array %s, size "
@@ -708,6 +711,10 @@ class BlockAnalysis {
     bool error;
 
 public:
+    BlockAnalysis() {
+        error = false;
+    }
+
     void add(const clang::CFGBlock *block) {
         block2Ctx[block] = new BlockApronContext(block, &block2Ctx);
     }
