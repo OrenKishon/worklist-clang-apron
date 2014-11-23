@@ -736,10 +736,10 @@ public:
         if (!blkApronCtx->updateEntryValue())
             return false;
 
-        printf("Some values changed\n");
+        printf("Some abstract values changed\n");
         // Apply the transfer function.
         TransferFunctions tf(blkApronCtx);
-    
+
         for (clang::CFGBlock::const_iterator I = block->begin(),
                 E = block->end(); I != E; ++I) {
           if (clang::Optional<clang::CFGStmt> cs = I->getAs<clang::CFGStmt>()) {
@@ -751,7 +751,7 @@ public:
           }
         }
     
-        printf("After transfer functions, Before update succ:\n");
+        printf("After transfer functions, Before update successors:\n");
         blkApronCtx->print();
         blkApronCtx->updateSuccessors();
     
@@ -810,23 +810,16 @@ static void analyze(clang::Decl *D) {
 
     clang::ForwardDataflowWorklist worklist(*cfg, ac);
     worklist.enqueueBlock(&cfg->getEntry());
+
     while (const clang::CFGBlock *block = worklist.dequeue()) {
         // Did the block change?
-        printf("\n[B%d]\n", block->getBlockID());
         bool changed = blockAnalysis.runOnBlock(block);
+
         if (blockAnalysis.foundError()) {
-            printf("** Aborting: Found error in block %d **\n",
-                    block->getBlockID());
             goto Error;
         }
         
         if (changed) {
-            printf("Enqueing: ");
-            for (clang::CFGBlock::const_succ_iterator I = block->succ_begin(),
-                    E = block->succ_end(); I != E; ++I) {
-                printf("[B%d] ", (*I)->getBlockID());
-            }
-            printf("\n");
             worklist.enqueueSuccessors(block);
         }
     }
